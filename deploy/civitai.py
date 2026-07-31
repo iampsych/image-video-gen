@@ -35,6 +35,21 @@ FOLDER_BY_TYPE = {
 }
 FALLBACK_FOLDER = "loras"
 
+# Civitai labels a Wan/Flux/Qwen finetune "Checkpoint", but those are distributed as
+# bare UNET weights. ComfyUI's UNETLoader only lists models/diffusion_models, so a
+# file dropped in models/checkpoints never appears in the loader that needs it.
+# models/checkpoints is for genuine all-in-one checkpoints (SD1.5, SDXL, Pony).
+UNET_BASE_MODELS = ("wan", "hunyuan", "ltxv", "mochi", "cosmos", "lumina", "qwen")
+
+
+def folder_for(model_type: str, base_model: str = "") -> str:
+    folder = FOLDER_BY_TYPE.get(model_type, FALLBACK_FOLDER)
+    if folder == "checkpoints":
+        base = (base_model or "").lower()
+        if any(tag in base for tag in UNET_BASE_MODELS):
+            return "diffusion_models"
+    return folder
+
 # Folders the UI offers, so a user can override a bad guess
 FOLDERS = ["loras", "checkpoints", "diffusion_models", "embeddings", "vae",
            "controlnet", "upscale_models", "hypernetworks", "clip_vision", "text_encoders"]
@@ -153,7 +168,7 @@ def resolve(ref: str, token: str = "") -> dict:
         "nsfw": bool(model.get("nsfw")),
         "creator": (model.get("creator") or {}).get("username") or "",
         "page": f"https://civitai.com/models/{model_id}",
-        "suggested_folder": FOLDER_BY_TYPE.get(kind, FALLBACK_FOLDER),
+        "suggested_folder": folder_for(kind, versions[0].get("base_model", "")),
         "selected_version": version_id or versions[0]["version_id"],
         "versions": versions,
     }
