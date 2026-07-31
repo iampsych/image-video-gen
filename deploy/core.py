@@ -79,10 +79,14 @@ def builder_python(cfg: dict) -> str:
     return (cfg.get("venv_python") or "").strip() or sys.executable
 
 
-# ComfyUI needs >= 3.10; compiled dependencies and custom nodes lag on the newest
-# releases, so anything past this is allowed but flagged.
+# ComfyUI needs >= 3.10. Every package in its requirements.txt ships a 3.14 wheel
+# (tokenizers and safetensors via forward-compatible cp310-abi3 builds), so newer
+# Pythons are fine for core ComfyUI. Third-party custom nodes are the laggard, so
+# 3.13+ gets a note rather than a warning.
 PYTHON_MIN = (3, 10)
-PYTHON_TESTED_MAX = (3, 12)
+PYTHON_NOTE_ABOVE = (3, 12)
+# torch only publishes cp314 wheels from 2.9 onward
+TORCH_MIN_FOR_314 = (2, 9)
 
 
 def interpreter_version(python: str) -> tuple | None:
@@ -240,28 +244,24 @@ def doctor(cfg: dict) -> dict:
     if python.exists():
         version = interpreter_version(str(python))
         label = ".".join(map(str, version)) if version else "unknown version"
-        if version and version[:2] > PYTHON_TESTED_MAX:
-            add("Virtual environment", None, f"Python {label} — {python}",
-                f"Python {version[0]}.{version[1]} is newer than ComfyUI's ecosystem is "
-                f"tested against. torch has wheels, but compiled dependencies and custom "
-                f"nodes often do not. Python 3.12 is the safe choice — install it, set "
-                f"'Python for the venv' in Settings, delete the venv folder and re-run Setup.")
-        elif version and version[:2] < PYTHON_MIN:
+        if version and version[:2] < PYTHON_MIN:
             add("Virtual environment", False, f"Python {label} — {python}",
                 "ComfyUI requires Python 3.10 or newer. Point 'Python for the venv' at a "
                 "newer interpreter, delete the venv folder and re-run Setup.")
         else:
-            add("Virtual environment", True, f"Python {label} — {python}")
+            note = ""
+            if version and version[:2] > PYTHON_NOTE_ABOVE:
+                note = "  ·  core ComfyUI is fine here; some custom nodes may lag"
+            add("Virtual environment", True, f"Python {label} — {python}{note}")
     else:
         builder = builder_python(cfg)
         version = interpreter_version(builder)
         label = ".".join(map(str, version)) if version else "unknown"
         detail = f"not created — would be built with Python {label}"
-        if version and version[:2] > PYTHON_TESTED_MAX:
-            add("Virtual environment", None, detail,
-                f"That would give you a Python {version[0]}.{version[1]} venv, which is ahead "
-                f"of what ComfyUI's dependencies support. Install Python 3.12 and set "
-                f"'Python for the venv' in Settings before running Setup.")
+        if version and version[:2] < PYTHON_MIN:
+            add("Virtual environment", False, detail,
+                "ComfyUI requires Python 3.10 or newer. Set 'Python for the venv' in "
+                "Settings to a newer interpreter before running Setup.")
         else:
             add("Virtual environment", False, detail, "Run Setup -> Create venv.")
 
