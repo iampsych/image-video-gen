@@ -13,7 +13,7 @@
       ],
       "size": [
         470,
-        340
+        400
       ],
       "flags": {},
       "order": 0,
@@ -25,7 +25,7 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "## Upscale a video you generated\n\n**Two independent things you can do:**\n\n- **Spatial** \u2014 `Upscale Image (using Model)` makes each frame bigger and sharper.\n- **Temporal** \u2014 `Frame Interpolate` invents in-between frames for smoother motion.\n\n**Steps**\n\n1. Drop your video into `ComfyUI/input/`, then pick it in **Load Video**.\n2. Choose an upscale model. A **2x** model is usually better for video than 4x \u2014 less over-sharpening and far less VRAM.\n3. **Frame Interpolate is bypassed** by default. Select a RIFE model and press **Ctrl+B** on both purple nodes to switch it on.\n4. **Set `fps` on Create Video.** WAN clips are **16 fps**. If you interpolate at multiplier 2, set it to **32** to keep real time \u2014 leave it at 16 and you get half-speed slow motion, which is sometimes what you want.\n\nAudio is carried through automatically if the source had any."
+        "## Upscale a video you generated\n\n**Two independent things you can do:**\n\n- **Spatial** \u2014 `Upscale Image (using Model)` makes each frame bigger and sharper.\n- **Temporal** \u2014 `Frame Interpolate` invents in-between frames for smoother motion.\n\n**Steps**\n\n1. Drop your video into `ComfyUI/input/`, then pick it in **Load Video**.\n2. Choose an upscale model. A **2x** model is usually better for video than 4x \u2014 less over-sharpening and far less VRAM.\n3. **Frame Interpolate is bypassed** by default. Select a RIFE model and press **Ctrl+B** on both purple nodes to switch it on.\n4. **Set `fps` on Create Video.** WAN clips are **16 fps**. If you interpolate at multiplier 2, set it to **32** to keep real time \u2014 leave it at 16 and you get half-speed slow motion, which is sometimes what you want.\n\nAudio is carried through automatically if the source had any.\n\n> **Dropdown says `undefined` or looks empty?** The browser cached the model list from before your files existed. Press **R** on the canvas (or reload the tab) \u2014 ComfyUI rescans the folders on its own, no restart needed."
       ],
       "title": "Read me"
     },

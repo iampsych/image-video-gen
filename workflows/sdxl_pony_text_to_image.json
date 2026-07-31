@@ -13,7 +13,7 @@
       ],
       "size": [
         430,
-        320
+        400
       ],
       "flags": {},
       "order": 0,
@@ -25,7 +25,7 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "## SDXL / Pony \u2014 text to image\n\n**Set these, left to right:**\n\n1. **Checkpoint** \u2014 your SDXL or Pony model (`models/checkpoints`)\n2. **Clip skip** \u2014 `-2` for Pony, `-1` for most plain SDXL\n3. **LoRA 1-3** \u2014 all three start **bypassed** (dark purple). Select a file, then **Ctrl+B** on the node to switch it on. Ctrl+B again to turn it off.\n4. **Prompts** \u2014 Pony needs the `score_9, score_8_up\u2026` prefix\n5. **Size** \u2014 832\u00d71216 portrait, 1216\u00d7832 landscape, 1024\u00d71024 square\n6. **Sampler** \u2014 25-30 steps, CFG 6-8\n\nNo Pony model yet? Add one from the **Civitai** tab in the deploy manager, then press **R** here to refresh the dropdowns."
+        "## SDXL / Pony \u2014 text to image\n\n**Set these, left to right:**\n\n1. **Checkpoint** \u2014 your SDXL or Pony model (`models/checkpoints`)\n2. **Clip skip** \u2014 `-2` for Pony, `-1` for most plain SDXL\n3. **LoRA 1-3** \u2014 all three start **bypassed** (dark purple). Select a file, then **Ctrl+B** on the node to switch it on. Ctrl+B again to turn it off.\n4. **Prompts** \u2014 Pony needs the `score_9, score_8_up\u2026` prefix\n5. **Size** \u2014 832\u00d71216 portrait, 1216\u00d7832 landscape, 1024\u00d71024 square\n6. **Sampler** \u2014 25-30 steps, CFG 6-8\n\nNo Pony model yet? Add one from the **Civitai** tab in the deploy manager, then press **R** here to refresh the dropdowns.\n\n> **Dropdown says `undefined` or looks empty?** The browser cached the model list from before your files existed. Press **R** on the canvas (or reload the tab) \u2014 ComfyUI rescans the folders on its own, no restart needed."
       ],
       "title": "Read me"
     },
