@@ -411,10 +411,20 @@ install — re-run those Setup steps.
 Run `python manage.py --doctor`. If the port is taken, use `--port 8600`.
 
 **`ConnectionAbortedError [WinError 10053]` in the console**
-Harmless, and silenced as of the current build. The page polls once a second, so
-every reload or tab switch aborts an in-flight `/api/state` response; older
-builds printed a traceback for each one. Nothing was ever wrong — downloads and
-setup are unaffected. Pull the latest and it stops.
+Harmless, and fixed in the current build — `git pull` and it stops. Nothing was
+ever actually wrong; downloads and setup were unaffected.
+
+The proximate cause is the browser closing a connection while the server is
+mid-write: the page polls `/api/state` once a second, so any reload, tab switch
+or navigation aborts an in-flight response, and older builds printed a full
+traceback for each one.
+
+What made it constant rather than occasional was that `/api/state` used to take
+**~1.5 seconds** — the environment probe spawned a subprocess that imported torch
+on *every* poll. With a 1-second poll interval, requests overlapped permanently,
+so there was always one in flight to abort. The probe is now cached for 20
+seconds (and invalidated when config changes or a setup step finishes), which
+takes `/api/state` to ~2 ms. Disconnects are also caught rather than printed.
 
 **A custom node fails to install its dependencies**
 Check the Python version on the Status tab's *Virtual environment* row. Core

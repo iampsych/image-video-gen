@@ -72,8 +72,19 @@ def configure_downloads(cfg: dict):
                         cfg.get("max_retries", 5))
 
 
+_last_task_status = None
+
+
 def state() -> dict:
+    global _last_task_status
     cfg = core.load_config()
+    # A setup step that just finished almost certainly changed the environment,
+    # so drop the cached probe rather than waiting out its TTL.
+    task_status = task.status
+    if task_status != _last_task_status:
+        if _last_task_status == "running":
+            core.invalidate_doctor()
+        _last_task_status = task_status
     return {
         "config": cfg,
         "doctor": core.doctor(cfg),
@@ -161,6 +172,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if route == "/api/config":
                 cfg = core.save_config(body)
+                core.invalidate_doctor()          # paths may now point somewhere else
                 self._json({"ok": True, "config": cfg})
 
             elif route == "/api/download":

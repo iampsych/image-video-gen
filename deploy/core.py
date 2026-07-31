@@ -11,6 +11,8 @@ import platform
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -206,7 +208,38 @@ def nvidia_smi() -> list:
     return gpus
 
 
-def doctor(cfg: dict) -> dict:
+# Probing the environment costs a subprocess that imports torch — well over a
+# second. The UI polls once a second, so without this cache every poll would
+# spawn another torch import, responses would overlap, and the browser would be
+# aborting connections constantly.
+DOCTOR_TTL = 20.0
+_doctor_cache = {"key": None, "at": 0.0, "value": None}
+_doctor_lock = threading.Lock()
+
+
+def invalidate_doctor():
+    """Force the next doctor() call to re-probe — after config or setup changes."""
+    with _doctor_lock:
+        _doctor_cache["value"] = None
+
+
+def doctor(cfg: dict, force: bool = False) -> dict:
+    key = json.dumps({k: cfg.get(k) for k in ("comfyui_dir", "models_dir", "venv_python")},
+                     sort_keys=True)
+    now = time.monotonic()
+    with _doctor_lock:
+        fresh = (_doctor_cache["value"] is not None
+                 and _doctor_cache["key"] == key
+                 and now - _doctor_cache["at"] < DOCTOR_TTL)
+        if fresh and not force:
+            return _doctor_cache["value"]
+    value = _doctor(cfg)
+    with _doctor_lock:
+        _doctor_cache.update(key=key, at=time.monotonic(), value=value)
+    return value
+
+
+def _doctor(cfg: dict) -> dict:
     """Produce the checklist the Status tab renders."""
     checks = []
     cdir = comfy_dir(cfg)
