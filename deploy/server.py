@@ -66,7 +66,8 @@ def install_workflows(cfg: dict) -> dict:
 
 def configure_downloads(cfg: dict):
     downloads.configure(cfg.get("concurrency", 2), cfg.get("hf_token", ""),
-                        cfg.get("civitai_token", ""), cfg.get("verify_sha256", False))
+                        cfg.get("civitai_token", ""), cfg.get("verify_sha256", False),
+                        cfg.get("max_retries", 5))
 
 
 def state() -> dict:

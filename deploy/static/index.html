@@ -172,6 +172,11 @@
       <div class="row">
         <label>Parallel downloads
           <input name="concurrency" type="number" min="1" max="6"></label>
+        <label>Retries per file
+          <input name="max_retries" type="number" min="1" max="20">
+          <em>Automatic, with backoff. Each retry resumes rather than restarting.</em></label>
+      </div>
+      <div class="row">
         <label>HuggingFace token
           <input name="hf_token" type="password" spellcheck="false" placeholder="only for gated repos">
           <em>Not needed for anything in the default manifest.</em></label>

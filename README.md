@@ -109,10 +109,19 @@ minimum useful sets are:
 - **Images only:** `flux` (34.2 GB)
 - **Video only:** `wan21_core` + `wan21_speed` (22.7 GB)
 
-Downloads **resume**. Closing the browser doesn't stop them; closing the manager
-does, but re-queueing picks up from where the `.part` file left off. Each file is
-size-checked before being moved into place, so a truncated download can't
-masquerade as a good one.
+Downloads **resume**, and transient failures **retry on their own** — up to five
+attempts per file with exponential backoff (5s, 10s, 20s … capped at 2 minutes).
+Every retry sends an HTTP `Range` request from the `.part` offset, so a dropped
+connection 13 GB into a 14 GB file costs seconds, not the file.
+
+Authentication failures and 404s are not retried — no amount of retrying fixes a
+missing token.
+
+Closing the browser doesn't stop anything; closing the manager does, but
+re-queueing picks up exactly where it left off. Each file is size-checked before
+being moved into place, so a truncated download can't masquerade as a good one.
+
+Tune the attempt count with **Retries per file** in Settings.
 
 ### 5. Workflows
 
@@ -332,12 +341,24 @@ Either the NVIDIA driver is missing (the GPU check will also be red), or the
 `cpu` channel got installed. Set the right channel and re-run Setup → Install
 PyTorch.
 
-**A download failed**
-The file's row shows the reason. Re-select it and download again — it resumes
-from the `.part` file. `size mismatch` means the transfer was truncated;
-retrying fixes it. For `HTTP 401/403`, the file needs authentication: an HF token
-for gated HuggingFace repos (nothing in the default manifest is), or a Civitai
-API key for early-access files.
+**Downloads were interrupted — how do I retry?**
+Usually you don't: a file that drops mid-transfer retries itself and resumes from
+the `.part` offset. If it exhausted its attempts and shows **failed**, use
+**Select all missing → Download** (that selects anything not `installed`,
+including `partial` and `wrong size` rows), or tick the single row. Nothing
+already downloaded is fetched twice. On the Civitai tab the equivalent is
+**Download all missing**.
+
+**A download failed permanently**
+The row shows the reason. `HTTP 401/403` means it needs authentication — an HF
+token for gated HuggingFace repos (nothing in the default manifest is), or a
+Civitai API key for early-access files. `HTTP 404` means the host removed it.
+Neither is retried.
+
+**A file says `cancelled` or `failed` but the group says complete**
+Fixed — finished jobs whose file verifies on disk are now forgotten, and the
+on-disk state wins over a dead job status. If you're on an older build, reload
+the page after restarting the manager.
 
 **Downloads are slow**
 Raise **Parallel downloads** in Settings (max 6). Past 2-3 you're usually

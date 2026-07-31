@@ -63,6 +63,28 @@ function jobMap(dl) {
   return jobs;
 }
 
+const LIVE = ["queued", "running", "retrying"];
+
+/* What a row shows. An in-flight job wins, because it is the freshest thing we
+   know. Otherwise the file on disk wins — a dead 'cancelled' or 'failed' job
+   must never shadow a file that has since downloaded correctly. */
+function statusTag(m, job) {
+  if (job && LIVE.includes(job.status)) {
+    if (job.status === "running")
+      return `<span class="tag partial">${job.percent}% · ${rate(job.speed)}</span>`;
+    if (job.status === "retrying")
+      return `<span class="tag partial">retrying ${job.attempt}/${job.max_attempts}…</span>`;
+    return `<span class="tag missing">queued</span>`;
+  }
+  if (m.state === "ok") return `<span class="tag ok">installed</span>`;
+  if (job && job.status === "error") return `<span class="tag bad">failed</span>`;
+  if (job && job.status === "cancelled") return `<span class="tag missing">cancelled</span>`;
+  if (m.state === "partial")
+    return `<span class="tag partial">partial ${Math.round(100 * m.local_size / m.size)}%</span>`;
+  if (m.state === "size-mismatch") return `<span class="tag bad">wrong size</span>`;
+  return `<span class="tag missing">missing</span>`;
+}
+
 function renderGroups(manifest, dl) {
   const jobs = jobMap(dl);
 
@@ -73,17 +95,8 @@ function renderGroups(manifest, dl) {
 
     const files = g.models.map(m => {
       const job = jobs[`${m.folder}/${m.file}`];
-      const busy = job && (job.status === "running" || job.status === "queued");
-      let tag = `<span class="tag missing">missing</span>`;
-      if (m.state === "ok") tag = `<span class="tag ok">installed</span>`;
-      else if (m.state === "partial") tag = `<span class="tag partial">partial ${Math.round(100 * m.local_size / m.size)}%</span>`;
-      else if (m.state === "size-mismatch") tag = `<span class="tag bad">wrong size</span>`;
-      if (job) {
-        if (job.status === "running") tag = `<span class="tag partial">${job.percent}% · ${rate(job.speed)}</span>`;
-        else if (job.status === "queued") tag = `<span class="tag missing">queued</span>`;
-        else if (job.status === "error") tag = `<span class="tag bad">failed</span>`;
-        else if (job.status === "cancelled") tag = `<span class="tag missing">cancelled</span>`;
-      }
+      const busy = job && LIVE.includes(job.status);
+      const tag = statusTag(m, job);
       return `
         <div class="file">
           <input type="checkbox" data-file="${esc(m.file)}"
@@ -142,7 +155,7 @@ function renderGroups(manifest, dl) {
     render();
   });
 
-  const active = (dl.jobs || []).filter(j => j.status === "running" || j.status === "queued");
+  const active = (dl.jobs || []).filter(j => LIVE.includes(j.status));
   const box = $("#dl-active");
   if (active.length) {
     const pct = dl.total_bytes ? Math.round(100 * dl.done_bytes / dl.total_bytes) : 0;
@@ -305,16 +318,8 @@ function renderSaved(cv, dl) {
 
   $("#cv-saved").innerHTML = cv.models.length ? cv.models.map(m => {
     const job = jobs[`${m.folder}/${m.file}`];
-    let tag = `<span class="tag missing">missing</span>`;
-    if (m.state === "ok") tag = `<span class="tag ok">installed</span>`;
-    else if (m.state === "partial") tag = `<span class="tag partial">partial</span>`;
-    else if (m.state === "size-mismatch") tag = `<span class="tag bad">wrong size</span>`;
-    if (job) {
-      if (job.status === "running") tag = `<span class="tag partial">${job.percent}% · ${rate(job.speed)}</span>`;
-      else if (job.status === "queued") tag = `<span class="tag missing">queued</span>`;
-      else if (job.status === "error") tag = `<span class="tag bad">failed</span>`;
-    }
-    const busy = job && (job.status === "running" || job.status === "queued");
+    const tag = statusTag(m, job);
+    const busy = job && LIVE.includes(job.status);
     return `
       <div class="cvrow">
         <div>

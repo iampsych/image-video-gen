@@ -34,6 +34,7 @@ DEFAULTS = {
     "hf_token": "",              # only needed for licence-gated repos
     "civitai_token": "",         # needed for early-access / login-gated Civitai files
     "concurrency": 2,
+    "max_retries": 5,            # automatic retries per file, with backoff
     "verify_sha256": False,      # full hashing of 20 GB files is slow; size check is default
 }
 

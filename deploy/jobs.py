@@ -29,6 +29,10 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 # --------------------------------------------------------------------------- downloads
 
+class PermanentError(RuntimeError):
+    """A failure retrying cannot fix — bad credentials, missing file."""
+
+
 class Download:
     def __init__(self, model: dict, dest: Path):
         self.file = model["file"]
@@ -40,10 +44,18 @@ class Download:
         self.dest = dest
         self.key = f"{self.folder}/{self.file}"
         self.done = 0
-        self.status = "queued"     # queued|running|done|error|cancelled
+        self.status = "queued"     # queued|running|retrying|done|error|cancelled
         self.error = ""
         self.speed = 0.0
+        self.attempt = 0
+        self.max_attempts = 1
         self.cancel = threading.Event()
+
+    def complete_on_disk(self) -> bool:
+        try:
+            return self.dest.exists() and (not self.size or self.dest.stat().st_size == self.size)
+        except OSError:
+            return False
 
     def as_dict(self) -> dict:
         return {
@@ -51,6 +63,7 @@ class Download:
             "source": self.source, "size": self.size,
             "done": self.done, "status": self.status, "error": self.error,
             "speed": round(self.speed, 1),
+            "attempt": self.attempt, "max_attempts": self.max_attempts,
             "percent": round(100 * self.done / self.size, 1) if self.size else 0,
         }
 
@@ -65,12 +78,15 @@ class Downloads:
         self.workers: list[threading.Thread] = []
         self.tokens = {"hf": "", "civitai": ""}
         self.verify_sha = False
+        self.max_retries = 5
 
     # -- control ----------------------------------------------------------
 
-    def configure(self, concurrency: int, hf_token: str, civitai_token: str, verify_sha: bool):
+    def configure(self, concurrency: int, hf_token: str, civitai_token: str, verify_sha: bool,
+                  max_retries: int = 5):
         self.tokens = {"hf": hf_token or "", "civitai": civitai_token or ""}
         self.verify_sha = bool(verify_sha)
+        self.max_retries = max(1, min(int(max_retries or 5), 20))
         want = max(1, min(int(concurrency or 2), 6))
         while len(self.workers) < want:
             thread = threading.Thread(target=self._worker, daemon=True)
@@ -106,10 +122,24 @@ class Downloads:
             if job.status == "queued":
                 job.status = "cancelled"
 
+    def prune(self):
+        """Forget finished jobs whose file is now correct on disk.
+
+        Without this a stale ``cancelled`` or ``error`` job keeps shadowing a
+        file that has since downloaded fine, and the UI shows the dead status
+        instead of 'installed'.
+        """
+        with self.lock:
+            for key, job in list(self.jobs.items()):
+                if job.status in ("done", "cancelled", "error") and job.complete_on_disk():
+                    del self.jobs[key]
+
     def snapshot(self) -> dict:
+        self.prune()
         with self.lock:
             jobs = [j.as_dict() for j in self.jobs.values()]
-        active = [j for j in jobs if j["status"] in ("queued", "running")]
+        live = ("queued", "running", "retrying")
+        active = [j for j in jobs if j["status"] in live]
         return {
             "jobs": jobs,
             "active": len(active),
@@ -124,13 +154,46 @@ class Downloads:
         while True:
             job = self.queue.get()
             try:
-                if not job.cancel.is_set():
-                    self._fetch(job)
+                self._attempt(job)
+            finally:
+                self.queue.task_done()
+
+    def _attempt(self, job: Download):
+        """Run a job, retrying transient failures with exponential backoff.
+
+        A dropped connection part-way through a 14 GB file is normal over hours
+        of downloading, and every retry resumes from the ``.part`` offset, so a
+        blip costs seconds rather than the whole file.
+        """
+        job.max_attempts = self.max_retries
+        delay = 5
+        for attempt in range(1, self.max_retries + 1):
+            if job.cancel.is_set():
+                job.status = "cancelled"
+                return
+            job.attempt = attempt
+            try:
+                self._fetch(job)
+            except PermanentError as exc:
+                job.status = "error"
+                job.error = str(exc)
+                return
             except Exception as exc:                      # noqa: BLE001 - surfaced in UI
                 job.status = "error"
                 job.error = f"{type(exc).__name__}: {exc}"
-            finally:
-                self.queue.task_done()
+
+            if job.status in ("done", "cancelled"):
+                return
+            if attempt >= self.max_retries:
+                job.error = f"{job.error} (gave up after {attempt} attempts)"
+                return
+
+            job.status = "retrying"
+            job.speed = 0.0
+            if job.cancel.wait(delay):                    # interruptible sleep
+                job.status = "cancelled"
+                return
+            delay = min(delay * 2, 120)
 
     def _authorize(self, job: Download) -> tuple[str, dict]:
         """Attach credentials the way each host expects.
@@ -181,10 +244,11 @@ class Downloads:
                 response = None                            # already complete
             elif exc.code in (401, 403):
                 where = "Civitai" if job.source == "civitai" else "HuggingFace"
-                job.status = "error"
-                job.error = (f"HTTP {exc.code} — this download needs authentication. "
-                             f"Add a {where} API key in Settings.")
-                return
+                raise PermanentError(
+                    f"HTTP {exc.code} — this download needs authentication. "
+                    f"Add a {where} API key in Settings.") from exc
+            elif exc.code == 404:
+                raise PermanentError("HTTP 404 — the file is gone from the host.") from exc
             else:
                 raise
 
@@ -214,9 +278,10 @@ class Downloads:
 
         actual = part.stat().st_size if part.exists() else 0
         if job.size and actual != job.size:
-            job.status = "error"
-            job.error = f"size mismatch: got {actual:,} bytes, expected {job.size:,}"
-            return
+            if actual > job.size:              # overshoot can only be a bad .part
+                part.unlink(missing_ok=True)
+            # transient: the stream ended early, so retry resumes from the offset
+            raise RuntimeError(f"incomplete transfer: {actual:,} of {job.size:,} bytes")
 
         if self.verify_sha and job.sha256:
             digest = hashlib.sha256()
@@ -227,9 +292,8 @@ class Downloads:
                         return
                     digest.update(block)
             if digest.hexdigest() != job.sha256:
-                job.status = "error"
-                job.error = "sha256 mismatch — file corrupt, delete the .part and retry"
-                return
+                part.unlink(missing_ok=True)   # start clean on the next attempt
+                raise RuntimeError("sha256 mismatch — refetching from scratch")
 
         if dest.exists():
             dest.unlink()
