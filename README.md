@@ -3,16 +3,37 @@
 A small, dependency-free manager for standing up a ComfyUI box for **Flux image
 generation** and **WAN 2.1 / 2.2 video generation**.
 
-Clone this repo on the target machine, run one command, and drive the rest from a
-web UI: clone ComfyUI, build the venv, install the correct PyTorch for the GPU,
-download ~148 GB of models with resume, install workflows, and launch the server.
+Clone this repo on the target machine, run one command, and drive everything else
+from a web UI: clone ComfyUI, build the venv, install the correct PyTorch for the
+GPU, download ~148 GB of models with resume, install workflows, launch the server.
 
-The manager itself is **standard library Python only** — it has to run before
-ComfyUI, torch, or any pip package exists.
+The manager itself is **standard library Python only**. That is deliberate — it
+has to run on a bare machine *before* ComfyUI, torch, or any pip package exists.
+Adding a third-party dependency to the manager would break the bootstrap.
+
+---
+
+## Contents
+
+- [Quick start](#quick-start)
+- [First run, step by step](#first-run-step-by-step)
+- [What each tab does](#what-each-tab-does)
+- [The RTX 5090 gotcha](#the-rtx-5090-gotcha)
+- [What gets downloaded](#what-gets-downloaded)
+- [Bundled workflows](#bundled-workflows)
+- [Running it from another machine](#running-it-from-another-machine)
+- [Sharing one model library](#sharing-one-model-library)
+- [Troubleshooting](#troubleshooting)
+- [Command line](#command-line)
+- [HTTP API](#http-api)
+- [Repo layout](#repo-layout)
+- [Security](#security)
 
 ---
 
 ## Quick start
+
+On the target machine (Windows):
 
 ```powershell
 git clone https://github.com/iampsych/image-video-gen.git
@@ -20,102 +41,336 @@ cd image-video-gen
 powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
 ```
 
-The UI opens at <http://127.0.0.1:8500>. To drive it from another machine:
+The UI opens at <http://127.0.0.1:8500>.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1 -BindHost 0.0.0.0
-```
-
-Cross-platform equivalent:
+Cross-platform equivalent, or if you'd rather skip the PowerShell wrapper:
 
 ```bash
-python manage.py                 # local
-python manage.py --host 0.0.0.0  # LAN
-python manage.py --doctor        # environment check, no server
+python manage.py                 # local only
+python manage.py --host 0.0.0.0  # reachable across the LAN
+python manage.py --doctor        # environment check, no server, no browser
 ```
 
-Requires **Python 3.9+** and **git** on PATH.
+**Prerequisites:** Python 3.9+ and git on PATH. Nothing else — no pip install
+step. `bootstrap.ps1` checks both and tells you what's missing before starting.
 
 ---
 
-## Order of operations on a fresh machine
+## First run, step by step
 
-1. **Status** — confirm the GPU is visible and note what's failing.
-2. **Settings** — set the ComfyUI directory, the models directory, and the
-   PyTorch channel. **RTX 50-series must use `cu128`.**
-3. **Setup** — run the four steps top to bottom.
-4. **Models** — *Select recommended*, then *Download*. Resume is automatic.
-5. **Workflows** — *Install workflows*.
-6. **Launch** — start ComfyUI and open it.
+Work the tabs left to right. The whole thing is roughly: point it at a folder,
+run four setup steps, download models, launch.
+
+### 1. Status
+
+Look at the checklist first. On a fresh machine most of it will be red — that's
+expected. Every failing check names its own fix. The two that matter before you
+go further are **GPU** (is the NVIDIA driver there at all) and **git available**.
+
+### 2. Settings
+
+Set these before running anything:
+
+| Field | What to put |
+|---|---|
+| **ComfyUI directory** | Where ComfyUI gets cloned, e.g. `D:\ComfyUI`. Created if absent. |
+| **Models directory** | Leave blank for `<ComfyUI>/models`, or point at a big drive / network share. |
+| **PyTorch channel** | **`cu128` for an RTX 50-series card.** See [the gotcha](#the-rtx-5090-gotcha). |
+| **Bind address** | `127.0.0.1` unless you want ComfyUI reachable from another machine — then `0.0.0.0`. |
+| **Port** | ComfyUI's port, default `8188`. Not the manager's port. |
+
+Click **Save**. Leave the HF token blank — nothing in the default manifest needs
+it.
+
+### 3. Setup
+
+Run the four steps **top to bottom**, waiting for each to finish. Output streams
+into the panel underneath; the buttons disable while a step is running.
+
+1. **Clone ComfyUI** — clones it, or fast-forwards if it's already there.
+2. **Create virtual environment** — makes `venv/` inside the ComfyUI folder.
+3. **Install PyTorch** — uses the channel from Settings. Big download, several minutes.
+4. **Install ComfyUI requirements** — everything else from `requirements.txt`.
+
+Then go back to **Status**. Everything should be green now, in particular *GPU
+visible to torch*. If it isn't, stop and fix it here — nothing downstream will
+work.
+
+### 4. Models
+
+Click **Select recommended**, then **Download**. That's 136.6 GB and will take a
+while.
+
+If you want less, expand the groups and pick individual files — the table in
+[What gets downloaded](#what-gets-downloaded) says what each group buys you. The
+minimum useful sets are:
+
+- **Images only:** `flux` (34.2 GB)
+- **Video only:** `wan21_core` + `wan21_speed` (22.7 GB)
+
+Downloads **resume**. Closing the browser doesn't stop them; closing the manager
+does, but re-queueing picks up from where the `.part` file left off. Each file is
+size-checked before being moved into place, so a truncated download can't
+masquerade as a good one.
+
+### 5. Workflows
+
+Click **Install workflows**. Copies the six bundled graphs into
+`<ComfyUI>/user/default/workflows/`, where they appear in ComfyUI's sidebar.
+
+### 6. Launch
+
+Click **Start ComfyUI**, wait for the log to settle, then use the **open
+ComfyUI** link in the header. Load a workflow from the sidebar and generate.
+
+---
+
+## What each tab does
+
+| Tab | Purpose |
+|---|---|
+| **Status** | Environment checklist — Python, git, GPU, checkout, venv, torch, torch-sees-GPU, disk. Refreshes every second. |
+| **Setup** | The four provisioning steps, with live streamed output. One at a time. |
+| **Models** | Every file in the manifest, grouped, with on-disk state, live download progress and per-file selection. |
+| **Workflows** | Copies the bundled graphs into ComfyUI. |
+| **Launch** | Start/stop the ComfyUI process, tail its log, open it. |
+| **Settings** | Paths, PyTorch channel, bind address, port, parallel downloads, HF token, SHA-256 verification. |
+
+The page polls once a second, so progress, logs and status all update on their
+own. The dot next to the title in the header goes red if the manager stops
+responding.
 
 ---
 
 ## The RTX 5090 gotcha
 
-Blackwell cards report compute capability **sm_120**. PyTorch builds before
-**2.7** — including the common `2.6.0+cu124` — ship no sm_120 kernels and fail at
-the first CUDA operation, usually with `no kernel image is available for
-execution on the device`.
+**This is the single most likely thing to bite you.**
 
-Use the **`cu128`** channel (CUDA 12.8). The Status tab checks this explicitly:
-it reads the card's actual compute capability and the installed torch version,
-and fails the *GPU visible to torch* check with the fix if they don't match.
+Blackwell cards (RTX 50-series) report compute capability **sm_120**. PyTorch
+builds before **2.7** — including the very common `2.6.0+cu124` — ship no sm_120
+kernels. Torch imports fine, `torch.cuda.is_available()` returns `True`, and then
+the first real CUDA operation dies with:
 
-A venv is never portable between machines — always rebuild it on the target.
+```
+CUDA error: no kernel image is available for execution on the device
+```
+
+The fix is the **`cu128`** channel (CUDA 12.8) — which is the default in Settings.
+
+The Status tab checks this specifically rather than making you find out the hard
+way: it reads the card's actual compute capability and the installed torch
+version, and fails the **GPU visible to torch** check with the exact remedy if
+they don't match.
+
+To fix an existing bad install, set the channel to `cu128` in Settings and re-run
+**Setup → Install PyTorch**. It force-reinstalls, so it will replace the wrong
+build.
+
+> **A venv is never portable between machines.** Don't copy `venv/` from another
+> box — absolute paths are baked into it. Always run the setup steps on the target.
 
 ---
 
 ## What gets downloaded
 
 Sizes and SHA-256 digests in `models.manifest.json` were fetched from the
-HuggingFace API, and the filenames match the workflow templates that ship with
-ComfyUI, so the graphs load without touching a dropdown.
+HuggingFace API rather than typed by hand, and the filenames match the workflow
+templates that ship with ComfyUI, so the graphs load without touching a dropdown.
 
-| Group | Size | What it's for |
-|---|---:|---|
-| `flux` | 34.2 GB | Flux.1-dev still images |
-| `wan21_core` | 21.3 GB | WAN 2.1 text-to-video + shared UMT5 encoder and VAE |
-| `wan21_i2v` | 17.7 GB | WAN 2.1 image-to-video (+ `clip_vision_h`) |
-| `wan21_speed` | 1.4 GB | lightx2v step-distill LoRAs for 2.1 |
-| `wan22_t2v` | 31.0 GB | WAN 2.2 text-to-video, 14B two-expert MoE + 4-step LoRAs |
-| `wan22_i2v` | 31.0 GB | WAN 2.2 image-to-video, 14B MoE + 4-step LoRAs |
-| `wan22_5b` | 11.4 GB | WAN 2.2 TI2V 5B — faster and lighter, lower fidelity (optional) |
+| Group | Size | Recommended | What it's for |
+|---|---:|:---:|---|
+| `flux` | 34.2 GB | ✓ | Flux.1-dev still images |
+| `wan21_core` | 21.3 GB | ✓ | WAN 2.1 text-to-video + the shared UMT5 encoder and VAE |
+| `wan21_i2v` | 17.7 GB | ✓ | WAN 2.1 image-to-video (+ `clip_vision_h`) |
+| `wan21_speed` | 1.4 GB | ✓ | lightx2v step-distill LoRAs for 2.1 |
+| `wan22_t2v` | 31.0 GB | ✓ | WAN 2.2 text-to-video, 14B two-expert MoE + 4-step LoRAs |
+| `wan22_i2v` | 31.0 GB | ✓ | WAN 2.2 image-to-video, 14B MoE + 4-step LoRAs |
+| `wan22_5b` | 11.4 GB | | WAN 2.2 TI2V 5B — faster and lighter, lower fidelity |
 
-**148 GB total.** Everything resolves without authentication; the HF token field
-in Settings is only there for licence-gated repositories.
+**148 GB total; 136.6 GB for the recommended set.** Everything resolves without
+authentication — the HF token field exists only for licence-gated repositories.
 
-Notes worth knowing:
+Things that are easy to get wrong:
 
-- WAN 2.2 14B is a **mixture-of-experts pair** — the high-noise and low-noise
-  models both load, and both need their matching LoRA half.
-- The WAN 2.2 **14B** models reuse `wan_2.1_vae`. Only the **5B** model needs
-  `wan2.2_vae`.
-- The **lightx2v LoRAs are the single biggest speedup** — roughly 20 steps down
-  to 4-6.
+- **WAN 2.2 14B is a mixture-of-experts pair.** The high-noise and low-noise
+  models both load at once, and each needs its matching LoRA half. You can't use
+  just one.
+- **WAN 2.2 14B reuses `wan_2.1_vae`.** Only the **5B** model needs `wan2.2_vae`.
+- **The lightx2v LoRAs are the biggest single speedup** — roughly 20 steps down to
+  4-6. Don't skip them; they're small.
+- **`clip_vision_h` is only needed by WAN 2.1 image-to-video.** WAN 2.2 doesn't
+  use it, and text-to-video never does.
+
+---
 
 ## Bundled workflows
 
-Copied into `ComfyUI/user/default/workflows/` by the Workflows tab:
+Installed into `<ComfyUI>/user/default/workflows/` by the Workflows tab.
 
 | File | Notes |
 |---|---|
 | `flux_text_to_image.json` | The graph already proven working on the 4090 |
-| `wan2.1_text_to_video_14B.json` | Repointed from the 1.3B default to the 14B model |
-| `wan2.1_image_to_video_720p.json` | Repointed from the 480p default to 720p fp8 |
+| `wan2.1_text_to_video_14B.json` | Official template, repointed from the 1.3B default to the 14B model |
+| `wan2.1_image_to_video_720p.json` | Official template, repointed from the 480p default to 720p fp8 |
 | `wan2.2_text_to_video_14B.json` | Official template, unmodified |
 | `wan2.2_image_to_video_14B.json` | Official template, unmodified |
-| `wan2.2_ti2v_5B.json` | Official template, unmodified |
+| `wan2.2_ti2v_5B.json` | Official template, unmodified — needs the `wan22_5b` group |
+
+ComfyUI also ships hundreds more templates in its own browser (Workflow →
+Browse Templates). Those reference whatever filenames upstream chose, so you may
+have to switch a loader dropdown to a model you actually downloaded.
 
 ---
 
-## Layout
+## Running it from another machine
+
+Two separate things listen, and they're configured in different places:
+
+| | What sets it | Default |
+|---|---|---|
+| **The manager** (this app) | `--host` / `--port` on the command line | `127.0.0.1:8500` |
+| **ComfyUI** | Bind address / Port in the Settings tab | `127.0.0.1:8188` |
+
+To drive an idle box from your desk, expose both:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1 -BindHost 0.0.0.0
+```
+
+and set **Bind address** to `0.0.0.0` in Settings before starting ComfyUI.
+
+Then open the firewall on the target once:
+
+```powershell
+New-NetFirewallRule -DisplayName "ComfyUI Deploy" -Direction Inbound `
+  -LocalPort 8500,8188 -Protocol TCP -Action Allow
+```
+
+Now browse to `http://<target-ip>:8500` from anywhere on the LAN. Read
+[Security](#security) first.
+
+---
+
+## Sharing one model library
+
+Point **Models directory** at a network share or a second drive to avoid
+re-downloading 148 GB per machine. The manager only ever reads and writes that
+path, and ComfyUI picks models up from wherever it's told.
+
+Already have some of these files? Put them in the right subfolder
+(`diffusion_models/`, `text_encoders/`, `vae/`, `loras/`, `clip_vision/`) and the
+Models tab will show them as **installed** — matching is by filename and exact
+byte size, so nothing gets re-downloaded.
+
+---
+
+## Troubleshooting
+
+**"no kernel image is available for execution on the device"**
+Wrong PyTorch for the card. See [the 5090 gotcha](#the-rtx-5090-gotcha).
+
+**Status shows `torch.cuda.is_available()` is False**
+Either the NVIDIA driver is missing (the GPU check will also be red), or the
+`cpu` channel got installed. Set the right channel and re-run Setup → Install
+PyTorch.
+
+**A download failed**
+The file's row shows the reason. Re-select it and download again — it resumes
+from the `.part` file. `size mismatch` means the transfer was truncated;
+retrying fixes it. For `HTTP 401/403`, the repository is licence-gated and needs
+an HF token in Settings, though nothing in the default manifest is.
+
+**Downloads are slow**
+Raise **Parallel downloads** in Settings (max 6). Past 2-3 you're usually
+saturating the link rather than helping.
+
+**A model shows "wrong size"**
+The file on disk doesn't match the manifest — a partial copy from elsewhere, or a
+different quantisation with the same name. Delete it and re-download.
+
+**Setup step won't start**
+Only one runs at a time. Wait for the current one, or check the status pill next
+to the log.
+
+**ComfyUI won't start**
+Check the Launch log. Almost always a missing venv or an incomplete requirements
+install — re-run those Setup steps.
+
+**Manager won't start at all**
+Run `python manage.py --doctor`. If the port is taken, use `--port 8600`.
+
+**The header dot is red**
+The manager process died or was stopped. Restart it; downloads resume when
+re-queued.
+
+---
+
+## Command line
+
+```
+python manage.py [--host HOST] [--port PORT] [--no-browser] [--doctor]
+```
+
+| Flag | Meaning |
+|---|---|
+| `--host` | Bind address for the manager. `0.0.0.0` for LAN. Default `127.0.0.1`. |
+| `--port` | Manager port. Default `8500`. |
+| `--no-browser` | Don't auto-open a browser. |
+| `--doctor` | Print the Status checks and exit. Non-zero exit if any fail. |
+
+`--doctor` is the useful one for SSH or a scheduled task:
+
+```
+  [ ok ] Manager Python        3.10.11 (Windows 10)
+  [ ok ] git available         C:\Program Files\Git\mingw64\bin\git.EXE
+  [ ok ] GPU                   NVIDIA GeForce RTX 4090 - 24 GB, driver 596.49
+  [ ok ] ComfyUI checkout      H:\LocalAI\ComfyUI
+  [ ok ] Virtual environment   H:\LocalAI\ComfyUI\venv\Scripts\python.exe
+  [ ok ] PyTorch               2.6.0+cu124 (CUDA 12.4)
+  [ ok ] GPU visible to torch  NVIDIA GeForce RTX 4090 - sm_89, 26 GB VRAM
+  [ ok ] Disk space            2116 GB free at H:\
+
+  models: 7/21 present - 92.5 GB still to download
+```
+
+`bootstrap.ps1` takes `-BindHost`, `-Port` and `-NoBrowser`, and runs its own
+preflight (Python version, git, GPU) before handing over to `manage.py`.
+
+---
+
+## HTTP API
+
+Everything the UI does goes through this, so it's all scriptable.
+
+| Method | Path | Body |
+|---|---|---|
+| `GET` | `/api/state` | — returns config, checks, manifest state, jobs, logs |
+| `POST` | `/api/config` | `{"torch_channel":"cu128", ...}` |
+| `POST` | `/api/download` | `{"groups":["flux"]}` or `{"files":["ae.safetensors"]}` |
+| `POST` | `/api/download/cancel` | `{"all":true}` or `{"file":"..."}` |
+| `POST` | `/api/setup` | `{"step":"clone\|venv\|torch\|requirements"}` |
+| `POST` | `/api/workflows/install` | `{}` |
+| `POST` | `/api/comfy/start` · `/api/comfy/stop` | `{}` |
+| `POST` | `/api/shutdown` | `{}` — stops the manager |
+
+Fetch everything the recommended groups need, headless:
+
+```bash
+curl -X POST http://127.0.0.1:8500/api/download \
+  -H "Content-Type: application/json" \
+  -d '{"groups":["flux","wan21_core","wan21_i2v","wan21_speed","wan22_t2v","wan22_i2v"]}'
+```
+
+---
+
+## Repo layout
 
 ```
 manage.py               entry point (--doctor, --host, --port)
 deploy/core.py          config, manifest state, environment probing
 deploy/jobs.py          resumable downloader + streamed subprocess tasks
 deploy/server.py        stdlib HTTP server and JSON API
-deploy/static/          the single-page UI
+deploy/static/          the single-page UI (index.html, app.js, style.css)
 models.manifest.json    verified URLs, exact sizes, SHA-256
 workflows/              graphs installed into ComfyUI
 scripts/bootstrap.ps1   preflight + launch for Windows
@@ -123,32 +378,27 @@ config.json             local settings — gitignored, never committed
 ```
 
 `config.json` holds machine-specific paths and your HF token, so it stays out of
-git. Every machine gets its own.
+git and every machine gets its own. Models are never committed — the repo is
+about 370 KB.
 
-### Sharing one model library
-
-Point **Models directory** at a network share or second drive to avoid
-re-downloading 148 GB per machine. The manager reads and writes only that path;
-ComfyUI picks models up from wherever it's told.
+**Optional:** tick *Verify SHA-256 after each download* in Settings for full
+integrity checking. It's off by default because hashing a 20 GB file takes a
+while; the size check already catches truncated transfers, which is the common
+failure.
 
 ---
 
-## Reference
+## Security
 
-`python manage.py --doctor` prints the same checks as the Status tab and exits
-non-zero if any fail — useful over SSH or in a scheduled task.
+The manager has **no authentication** and by design can run arbitrary setup
+commands and write anywhere the user account can reach.
 
-API, if you want to script it:
+Binding it to `0.0.0.0` exposes that to everyone on the network. Only do it on a
+network you trust, and prefer an SSH tunnel over an open port if the network
+isn't yours:
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/api/state` | Everything: config, checks, manifest state, jobs |
-| `POST` | `/api/config` | Patch settings |
-| `POST` | `/api/download` | `{"groups":[...]}` or `{"files":[...]}` |
-| `POST` | `/api/download/cancel` | `{"all":true}` or `{"file":"..."}` |
-| `POST` | `/api/setup` | `{"step":"clone\|venv\|torch\|requirements"}` |
-| `POST` | `/api/workflows/install` | Copy workflows into ComfyUI |
-| `POST` | `/api/comfy/start` · `/api/comfy/stop` | Control the ComfyUI process |
+```bash
+ssh -L 8500:127.0.0.1:8500 user@target-machine
+```
 
-The manager binds to `127.0.0.1` by default. It has **no authentication** — it
-can run arbitrary setup commands, so only expose it on a network you trust.
+Then browse to `http://127.0.0.1:8500` locally with nothing exposed.
