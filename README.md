@@ -308,6 +308,7 @@ Installed into `<ComfyUI>/user/default/workflows/` by the Workflows tab.
 | File | Notes |
 |---|---|
 | `flux_text_to_image.json` | The graph already proven working on the 4090 |
+| `sdxl_pony_text_to_image.json` | SDXL / Pony with three LoRA slots — see below |
 | `wan2.1_text_to_video_14B.json` | Official template, repointed from the 1.3B default to the 14B model |
 | `wan2.1_image_to_video_720p.json` | Official template, repointed from the 480p default to 720p fp8 |
 | `wan2.2_text_to_video_14B.json` | Official template, unmodified |
@@ -317,6 +318,40 @@ Installed into `<ComfyUI>/user/default/workflows/` by the Workflows tab.
 ComfyUI also ships hundreds more templates in its own browser (Workflow →
 Browse Templates). Those reference whatever filenames upstream chose, so you may
 have to switch a loader dropdown to a model you actually downloaded.
+
+### The SDXL / Pony workflow
+
+`sdxl_pony_text_to_image.json` is laid out left to right in three labelled
+groups — **Model + LoRAs**, **Prompt**, **Settings** — with a read-me note on the
+canvas. Defaults are Pony-oriented: clip skip `-2`, 832×1216 portrait, 28 steps,
+CFG 7.0, `dpmpp_2m` / `karras`.
+
+Nothing in the default manifest fits it, because SDXL and Pony checkpoints live
+on Civitai. Add one from the **Civitai** tab, then press **R** in ComfyUI to
+refresh the dropdowns.
+
+**The three LoRA slots start bypassed** (drawn dark and translucent). That's
+deliberate: a bypassed node passes MODEL and CLIP straight through, so it neither
+runs nor validates, and an empty slot can't fail your prompt. To use one, pick a
+file and press **Ctrl+B** on the node. Ctrl+B again turns it back off. Chaining
+means LoRA 2 stacks on LoRA 1, and so on.
+
+Pony checkpoints also expect the quality-tag prefix — `score_9, score_8_up,
+score_7_up` — which is already in the positive prompt. Plain SDXL models don't
+want it; delete it and set clip skip to `-1`.
+
+### Turning any workflow into a one-panel control
+
+The WAN 2.2 templates show a single node with every setting promoted onto it.
+That's ComfyUI's **subgraph** feature, and you can do it to any workflow yourself:
+
+1. Box-select the nodes you want to hide.
+2. Right-click → **Convert to Subgraph**.
+3. Open it, right-click a widget → **Promote widget**, for each control you want
+   on the outside.
+
+The result collapses to one node exposing just those widgets. Doing it in the
+editor is far more reliable than hand-writing the subgraph JSON.
 
 ---
 
