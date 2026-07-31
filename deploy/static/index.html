@@ -151,6 +151,12 @@
       <label>Models directory
         <input name="models_dir" type="text" spellcheck="false" placeholder="(blank = &lt;ComfyUI&gt;/models)">
         <em>Point at a shared drive to reuse one model library across machines.</em></label>
+      <label>Python for the venv
+        <input name="venv_python" type="text" spellcheck="false"
+               placeholder="(blank = the Python running this manager)">
+        <em>Full path to python.exe, e.g. <code>C:\Python312\python.exe</code>. ComfyUI needs
+            3.10+, and 3.12 is the safe choice &mdash; compiled dependencies and custom nodes
+            lag behind newer releases. Changing this only affects a venv created from now on.</em></label>
       <label>PyTorch channel
         <select name="torch_channel">
           <option value="cu128">cu128 &mdash; CUDA 12.8 (RTX 50-series / Blackwell)</option>

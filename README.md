@@ -55,6 +55,27 @@ python manage.py --doctor        # environment check, no server, no browser
 **Prerequisites:** Python 3.9+ and git on PATH. Nothing else — no pip install
 step. `bootstrap.ps1` checks both and tells you what's missing before starting.
 
+### Which Python
+
+Two interpreters are involved, and they don't have to match:
+
+- **The one running the manager** — anything 3.9+, including 3.14. It only uses
+  the standard library.
+- **The one inside ComfyUI's venv** — this is the one that matters. ComfyUI needs
+  **3.10+**, and **3.12 is the safe choice**. torch publishes wheels well ahead of
+  the rest of the ecosystem, so on 3.13/3.14 torch installs cleanly and then
+  compiled dependencies and custom nodes fail.
+
+By default the venv is built with whatever Python started the manager. If that is
+newer than 3.12, install 3.12 and put its full path in **Settings → Python for
+the venv** *before* running Setup. The Status tab warns about this up front
+rather than letting you discover it at the first custom node.
+
+Get 3.12 from <https://www.python.org/downloads/windows/> — the 64-bit installer,
+with **"Add python.exe to PATH"** ticked. Changing the setting only affects a venv
+created from then on; to redo an existing one, delete the `venv` folder and re-run
+Setup steps 2-4.
+
 ---
 
 ## First run, step by step
@@ -76,6 +97,7 @@ Set these before running anything:
 |---|---|
 | **ComfyUI directory** | Where ComfyUI gets cloned, e.g. `D:\ComfyUI`. Created if absent. |
 | **Models directory** | Leave blank for `<ComfyUI>/models`, or point at a big drive / network share. |
+| **Python for the venv** | Blank uses whatever Python is running the manager. **Set this if that Python is newer than 3.12** — see below. |
 | **PyTorch channel** | **`cu128` for an RTX 50-series card.** See [the gotcha](#the-rtx-5090-gotcha). |
 | **Bind address** | `127.0.0.1` unless you want ComfyUI reachable from another machine — then `0.0.0.0`. |
 | **Port** | ComfyUI's port, default `8188`. Not the manager's port. |
@@ -378,6 +400,16 @@ install — re-run those Setup steps.
 
 **Manager won't start at all**
 Run `python manage.py --doctor`. If the port is taken, use `--port 8600`.
+
+**`ConnectionAbortedError [WinError 10053]` in the console**
+Harmless, and silenced as of the current build. The page polls once a second, so
+every reload or tab switch aborts an in-flight `/api/state` response; older
+builds printed a traceback for each one. Nothing was ever wrong — downloads and
+setup are unaffected. Pull the latest and it stops.
+
+**Custom nodes or pip packages fail to build in the venv**
+Check the Python version on the Status tab's *Virtual environment* row. If it's
+3.13 or newer, that's the cause — see [Which Python](#which-python).
 
 **The header dot is red**
 The manager process died or was stopped. Restart it; downloads resume when

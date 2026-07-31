@@ -27,6 +27,7 @@ MIN_TORCH_FOR_BLACKWELL = (2, 7)
 DEFAULTS = {
     "comfyui_dir": str(ROOT.parent / "ComfyUI"),
     "models_dir": "",            # blank -> <comfyui_dir>/models
+    "venv_python": "",           # interpreter used to BUILD the venv; blank -> this one
     "torch_channel": "cu128",    # cu128 = CUDA 12.8, required for RTX 50-series
     "listen": "127.0.0.1",
     "port": 8188,
@@ -71,6 +72,28 @@ def models_dir(cfg: dict) -> Path:
 def venv_python(cfg: dict) -> Path:
     base = comfy_dir(cfg) / "venv"
     return base / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def builder_python(cfg: dict) -> str:
+    """Interpreter used to create the venv — not necessarily the one running us."""
+    return (cfg.get("venv_python") or "").strip() or sys.executable
+
+
+# ComfyUI needs >= 3.10; compiled dependencies and custom nodes lag on the newest
+# releases, so anything past this is allowed but flagged.
+PYTHON_MIN = (3, 10)
+PYTHON_TESTED_MAX = (3, 12)
+
+
+def interpreter_version(python: str) -> tuple | None:
+    code, out, _ = _run([str(python), "-c",
+                         "import sys;print('%d.%d.%d' % sys.version_info[:3])"], timeout=25)
+    if code != 0 or not out:
+        return None
+    try:
+        return tuple(int(p) for p in out.strip().split("."))
+    except ValueError:
+        return None
 
 
 # --------------------------------------------------------------------------- manifest
@@ -214,9 +237,33 @@ def doctor(cfg: dict) -> dict:
         "Run Setup -> Clone ComfyUI.")
 
     python = venv_python(cfg)
-    add("Virtual environment", python.exists(),
-        str(python) if python.exists() else "not created",
-        "Run Setup -> Create venv.")
+    if python.exists():
+        version = interpreter_version(str(python))
+        label = ".".join(map(str, version)) if version else "unknown version"
+        if version and version[:2] > PYTHON_TESTED_MAX:
+            add("Virtual environment", None, f"Python {label} — {python}",
+                f"Python {version[0]}.{version[1]} is newer than ComfyUI's ecosystem is "
+                f"tested against. torch has wheels, but compiled dependencies and custom "
+                f"nodes often do not. Python 3.12 is the safe choice — install it, set "
+                f"'Python for the venv' in Settings, delete the venv folder and re-run Setup.")
+        elif version and version[:2] < PYTHON_MIN:
+            add("Virtual environment", False, f"Python {label} — {python}",
+                "ComfyUI requires Python 3.10 or newer. Point 'Python for the venv' at a "
+                "newer interpreter, delete the venv folder and re-run Setup.")
+        else:
+            add("Virtual environment", True, f"Python {label} — {python}")
+    else:
+        builder = builder_python(cfg)
+        version = interpreter_version(builder)
+        label = ".".join(map(str, version)) if version else "unknown"
+        detail = f"not created — would be built with Python {label}"
+        if version and version[:2] > PYTHON_TESTED_MAX:
+            add("Virtual environment", None, detail,
+                f"That would give you a Python {version[0]}.{version[1]} venv, which is ahead "
+                f"of what ComfyUI's dependencies support. Install Python 3.12 and set "
+                f"'Python for the venv' in Settings before running Setup.")
+        else:
+            add("Virtual environment", False, detail, "Run Setup -> Create venv.")
 
     torch_info = probe_torch(cfg)
     if not torch_info.get("present"):

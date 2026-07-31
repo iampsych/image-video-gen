@@ -35,7 +35,9 @@ def setup_steps(cfg: dict, step: str) -> tuple[str, list[list[str]], Path | None
         return "Clone ComfyUI", [["git", "clone", core.COMFY_REPO, str(cdir)]], cdir.parent
 
     if step == "venv":
-        return "Create virtual environment", [[sys.executable, "-m", "venv", str(cdir / "venv")]], cdir
+        builder = core.builder_python(cfg)
+        return (f"Create virtual environment ({builder})",
+                [[builder, "-m", "venv", str(cdir / "venv")]], cdir)
 
     if step == "torch":
         index = f"https://download.pytorch.org/whl/{channel}"
@@ -92,16 +94,34 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):                     # quieter console
         pass
 
+    def log_error(self, fmt, *args):
+        pass
+
+    def handle_one_request(self):
+        """Swallow client disconnects.
+
+        The UI polls once a second, so every reload or tab switch aborts an
+        in-flight /api/state response. That surfaces as WinError 10053 /
+        ECONNRESET and would otherwise dump a traceback per navigation.
+        """
+        try:
+            super().handle_one_request()
+        except (ConnectionError, TimeoutError):
+            self.close_connection = True
+
     # -- helpers ----------------------------------------------------------
 
     def _send(self, code: int, body: bytes, ctype: str):
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(body)
+        except (ConnectionError, TimeoutError):
+            self.close_connection = True
 
     def _json(self, payload, code: int = 200):
         self._send(code, json.dumps(payload).encode("utf-8"), "application/json")
