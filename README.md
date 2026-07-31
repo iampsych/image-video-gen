@@ -228,8 +228,9 @@ templates that ship with ComfyUI, so the graphs load without touching a dropdown
 | `wan22_t2v` | 31.0 GB | ✓ | WAN 2.2 text-to-video, 14B two-expert MoE + 4-step LoRAs |
 | `wan22_i2v` | 31.0 GB | ✓ | WAN 2.2 image-to-video, 14B MoE + 4-step LoRAs |
 | `wan22_5b` | 11.4 GB | | WAN 2.2 TI2V 5B — faster and lighter, lower fidelity |
+| `video_post` | 0.2 GB | | Upscalers + RIFE/FILM interpolation for finished clips |
 
-**148 GB total; 136.6 GB for the recommended set.** Everything resolves without
+**148.2 GB total; 136.6 GB for the recommended set.** Everything resolves without
 authentication — the HF token field exists only for licence-gated repositories.
 
 Things that are easy to get wrong:
@@ -339,6 +340,36 @@ means LoRA 2 stacks on LoRA 1, and so on.
 Pony checkpoints also expect the quality-tag prefix — `score_9, score_8_up,
 score_7_up` — which is already in the positive prompt. Plain SDXL models don't
 want it; delete it and set clip skip to `-1`.
+
+### Upscaling video you've generated
+
+`video_upscale.json` does two independent things, and you can use either or both:
+
+- **Spatial** — `ImageUpscaleWithModel` enlarges every frame with an ESRGAN-family
+  model. A **2x** model is the better default for video: less over-sharpening and
+  far less VRAM than 4x across dozens of frames.
+- **Temporal** — `FrameInterpolate` invents in-between frames with RIFE or FILM,
+  for smoother motion.
+
+Both are core ComfyUI — no custom nodes. Grab the `video_post` group from the
+Models tab first.
+
+The chain is `LoadVideo → GetVideoComponents → upscale → interpolate → CreateVideo
+→ SaveVideo`, and audio is carried through automatically if the source had any.
+Interpolation ships **bypassed**; Ctrl+B on the two purple nodes turns it on.
+
+**The one thing to remember: set `fps` on Create Video.** WAN clips are 16 fps.
+Interpolating at multiplier 2 doubles the frame count, so set fps to **32** to keep
+real time — leave it at 16 and you get half-speed slow motion, which is sometimes
+what you want.
+
+Verified end to end on a 256×256 / 16-frame / 16 fps clip: out came 512×512, 31
+frames, 32 fps.
+
+A note on formats: RIFE and FILM here are `.safetensors`, but most ESRGAN
+upscalers are distributed as `.pth`, which is a pickle. The ones in the manifest
+are long-established community models, but treat unknown `.pth` files from
+elsewhere with the same caution as any executable.
 
 ### Turning any workflow into a one-panel control
 

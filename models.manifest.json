@@ -253,6 +253,51 @@
           "note": "WAN 2.2 VAE \u2014 required by the 5B model only."
         }
       ]
+    },
+    {
+      "id": "video_post",
+      "name": "Video post-processing \u2014 upscale + interpolation",
+      "summary": "Enlarge finished clips and smooth their motion. Small files; works on any video, not just WAN output.",
+      "recommended": false,
+      "bytes": 225580673,
+      "models": [
+        {
+          "file": "4x-UltraSharp.pth",
+          "folder": "upscale_models",
+          "url": "https://huggingface.co/lokCX/4x-Ultrasharp/resolve/main/4x-UltraSharp.pth",
+          "repo": "lokCX/4x-Ultrasharp",
+          "size": 66961958,
+          "sha256": "a5812231fc936b42af08a5edba784195495d303d5b3248c24489ef0c4021fe01",
+          "note": "General-purpose 4x upscaler. Sharp, popular for stills; can over-crisp video."
+        },
+        {
+          "file": "RealESRGAN_x2.pth",
+          "folder": "upscale_models",
+          "url": "https://huggingface.co/ai-forever/Real-ESRGAN/resolve/main/RealESRGAN_x2.pth",
+          "repo": "ai-forever/Real-ESRGAN",
+          "size": 67061725,
+          "sha256": "c830d067d54fc767b9543a8432f36d91bc2de313584e8bbfe4ac26a47339e899",
+          "note": "2x upscaler. The better default for video - gentler and far lighter on VRAM than 4x."
+        },
+        {
+          "file": "rife_v4.26.safetensors",
+          "folder": "frame_interpolation",
+          "url": "https://huggingface.co/Comfy-Org/frame_interpolation/resolve/main/frame_interpolation/rife_v4.26.safetensors",
+          "repo": "Comfy-Org/frame_interpolation",
+          "size": 22674688,
+          "sha256": "151874592c877740e5db11522f4514df569eeafb0a0fcb2696f16e9e8d317c94",
+          "note": "RIFE 4.26 frame interpolation. Fast, and the format ComfyUI's FrameInterpolate expects."
+        },
+        {
+          "file": "film_net_fp16.safetensors",
+          "folder": "frame_interpolation",
+          "url": "https://huggingface.co/Comfy-Org/frame_interpolation/resolve/main/frame_interpolation/film_net_fp16.safetensors",
+          "repo": "Comfy-Org/frame_interpolation",
+          "size": 68882302,
+          "sha256": "f226e51375dc839d4b40e5c3d63da560dd1ea1c962364ec78f5adf2d05db05c0",
+          "note": "FILM interpolation. Slower than RIFE, often smoother on large motion."
+        }
+      ]
     }
   ]
 }
