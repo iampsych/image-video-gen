@@ -199,6 +199,71 @@ button.ghost:hover:not(:disabled) { color: var(--fail); border-color: var(--fail
 .bar { height: 3px; background: var(--panel-2); border-radius: 2px; overflow: hidden; margin-top: 5px; }
 .bar i { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
 
+/* ----------------------------------------------------------------- civitai */
+
+h3.sub { font-size: 15px; font-weight: 600; margin: 30px 0 12px; }
+
+input.wide {
+  flex: 1; min-width: 260px; padding: 8px 12px;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 7px;
+  font: inherit; font-size: 13px; font-family: var(--mono);
+}
+input.wide:focus { outline: none; border-color: var(--accent); }
+
+.resolved {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 16px; margin-bottom: 12px;
+}
+.resolved .top { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+.resolved .top h4 { margin: 0; font-size: 15px; font-weight: 600; }
+.resolved .by { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+.resolved .by a { color: var(--accent); text-decoration: none; }
+.resolved .by a:hover { text-decoration: underline; }
+.kind {
+  font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase;
+  border-radius: 4px; padding: 3px 8px;
+  background: rgba(76, 141, 255, 0.13); color: var(--accent);
+}
+.kind.nsfw { background: rgba(210, 153, 34, 0.15); color: var(--warn); }
+
+.resolved .picker { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-bottom: 13px; }
+.resolved label { font-size: 12.5px; font-weight: 500; color: var(--muted); }
+.resolved select {
+  width: 100%; margin-top: 5px; padding: 7px 10px;
+  background: var(--bg); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px;
+  font: inherit; font-size: 12.5px; font-family: var(--mono);
+}
+.resolved select:focus { outline: none; border-color: var(--accent); }
+
+.cvfiles { display: grid; gap: 5px; margin-bottom: 14px; }
+.cvfile {
+  display: grid; grid-template-columns: 16px 1fr auto; gap: 11px; align-items: center;
+  padding: 9px 12px; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 7px; cursor: pointer;
+}
+.cvfile:hover { border-color: #3a4553; }
+.cvfile input { accent-color: var(--accent); cursor: pointer; }
+.cvfile .nm { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+.cvfile .sub2 { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+.cvfile .sz { color: var(--muted); font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+
+.cvrow {
+  display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: center;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 11px 15px; margin-bottom: 7px;
+}
+.cvrow .nm { font-size: 13.5px; font-weight: 500; }
+.cvrow .meta2 { color: var(--muted); font-size: 12px; font-family: var(--mono); margin-top: 3px;
+                word-break: break-all; }
+.cvrow .meta2 a { color: var(--accent); text-decoration: none; }
+.cvrow .meta2 a:hover { text-decoration: underline; }
+.cvrow .sz { color: var(--muted); font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+.cvrow button { padding: 5px 11px; font-size: 12.5px; }
+.empty { color: var(--muted); font-size: 13px; padding: 22px; text-align: center;
+         border: 1px dashed var(--line); border-radius: var(--radius); }
+
 /* ------------------------------------------------------------------- forms */
 
 .form { display: grid; gap: 17px; max-width: 640px; }

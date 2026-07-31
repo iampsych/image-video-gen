@@ -23,6 +23,7 @@
   <button data-tab="status" class="active">Status</button>
   <button data-tab="setup">Setup</button>
   <button data-tab="models">Models</button>
+  <button data-tab="civitai">Civitai</button>
   <button data-tab="workflows">Workflows</button>
   <button data-tab="launch">Launch</button>
   <button data-tab="settings">Settings</button>
@@ -82,6 +83,32 @@
 
     <div id="dl-active" class="callout hidden"></div>
     <div id="groups"></div>
+  </section>
+
+  <!-- --------------------------------------------------------------- civitai -->
+  <section id="tab-civitai" class="tab">
+    <h2>Civitai</h2>
+    <p class="hint">
+      Paste a Civitai model URL to add a LoRA, checkpoint or embedding to your list.
+      The list lives in <code>civitai.models.json</code> and <strong>is committed to git</strong>,
+      so pushing from one machine and pulling on another carries the whole set with it.
+    </p>
+
+    <div class="toolbar">
+      <input id="cv-ref" class="wide" type="text" spellcheck="false"
+             placeholder="https://civitai.com/models/264290?modelVersionId=1558543  —  or just the id">
+      <button id="cv-lookup" class="primary">Look up</button>
+    </div>
+    <div id="cv-error" class="callout danger hidden"></div>
+
+    <div id="cv-result" class="resolved hidden"></div>
+
+    <h3 class="sub">Saved models</h3>
+    <div class="toolbar">
+      <button id="cv-dl-all" class="primary">Download all missing</button>
+      <span id="cv-summary" class="pill">0 saved</span>
+    </div>
+    <div id="cv-saved"></div>
   </section>
 
   <!-- ------------------------------------------------------------- workflows -->
@@ -149,6 +176,10 @@
           <input name="hf_token" type="password" spellcheck="false" placeholder="only for gated repos">
           <em>Not needed for anything in the default manifest.</em></label>
       </div>
+      <label>Civitai API key
+        <input name="civitai_token" type="password" spellcheck="false" placeholder="only for gated downloads">
+        <em>Public models download without one. Needed for early-access or login-gated files
+            &mdash; create one under Civitai &rarr; Account settings &rarr; API Keys.</em></label>
       <label class="check">
         <input name="verify_sha256" type="checkbox">
         <span>Verify SHA-256 after each download <em>(thorough, but slow on 20&nbsp;GB files)</em></span>

@@ -32,6 +32,7 @@ DEFAULTS = {
     "port": 8188,
     "extra_args": "",
     "hf_token": "",              # only needed for licence-gated repos
+    "civitai_token": "",         # needed for early-access / login-gated Civitai files
     "concurrency": 2,
     "verify_sha256": False,      # full hashing of 20 GB files is slow; size check is default
 }

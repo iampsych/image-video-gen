@@ -8,7 +8,7 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import core
+from . import civitai, core
 from .jobs import ComfyProcess, Downloads, Task
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -64,12 +64,18 @@ def install_workflows(cfg: dict) -> dict:
     return {"copied": copied, "dest": str(dest)}
 
 
+def configure_downloads(cfg: dict):
+    downloads.configure(cfg.get("concurrency", 2), cfg.get("hf_token", ""),
+                        cfg.get("civitai_token", ""), cfg.get("verify_sha256", False))
+
+
 def state() -> dict:
     cfg = core.load_config()
     return {
         "config": cfg,
         "doctor": core.doctor(cfg),
         "manifest": core.manifest_state(cfg),
+        "civitai": civitai.saved_state(cfg),
         "downloads": downloads.snapshot(),
         "task": task.snapshot(),
         "comfy": comfy.snapshot(),
@@ -146,16 +152,48 @@ class Handler(BaseHTTPRequestHandler):
                         chosen = group["id"] in wanted_groups or model["file"] in wanted_files
                         if chosen and model["state"] != "ok":
                             selected.append((model, core.target_path(cfg, model)))
-                downloads.configure(cfg.get("concurrency", 2), cfg.get("hf_token", ""),
-                                    cfg.get("verify_sha256", False))
+                configure_downloads(cfg)
                 self._json({"ok": True, "queued": downloads.enqueue(selected)})
 
             elif route == "/api/download/cancel":
                 if body.get("all"):
                     downloads.cancel_all()
                 else:
-                    downloads.cancel(body.get("file", ""))
+                    downloads.cancel(body.get("key", ""))
                 self._json({"ok": True})
+
+            elif route == "/api/civitai/resolve":
+                try:
+                    self._json({"ok": True,
+                                "model": civitai.resolve(body.get("ref", ""),
+                                                         cfg.get("civitai_token", ""))})
+                except civitai.CivitaiError as exc:
+                    self._json({"ok": False, "error": str(exc)}, 400)
+
+            elif route == "/api/civitai/add":
+                try:
+                    resolved = civitai.resolve(body.get("ref", ""), cfg.get("civitai_token", ""))
+                    record = civitai.add(resolved, int(body["version_id"]),
+                                         int(body["file_id"]), body.get("folder", ""))
+                    self._json({"ok": True, "record": record})
+                except (civitai.CivitaiError, KeyError, ValueError) as exc:
+                    self._json({"ok": False, "error": str(exc)}, 400)
+
+            elif route == "/api/civitai/remove":
+                self._json({"ok": civitai.remove(body.get("key", ""))})
+
+            elif route == "/api/civitai/download":
+                saved = civitai.saved_state(cfg)
+                keys = set(body.get("keys") or [])
+                selected = []
+                for record in saved["models"]:
+                    if record["state"] == "ok":
+                        continue
+                    if body.get("all") or record["key"] in keys:
+                        selected.append(({**record, "source": "civitai"},
+                                         civitai.download_target(cfg, record)))
+                configure_downloads(cfg)
+                self._json({"ok": True, "queued": downloads.enqueue(selected)})
 
             elif route == "/api/setup":
                 step = body.get("step", "")
@@ -193,9 +231,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(host: str, port: int):
-    cfg = core.load_config()
-    downloads.configure(cfg.get("concurrency", 2), cfg.get("hf_token", ""),
-                        cfg.get("verify_sha256", False))
+    configure_downloads(core.load_config())
     httpd = ThreadingHTTPServer((host, port), Handler)
     shown = "127.0.0.1" if host in ("0.0.0.0", "") else host
     print(f"\n  ComfyUI Deploy Manager  ->  http://{shown}:{port}/\n")

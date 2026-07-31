@@ -20,6 +20,7 @@ Adding a third-party dependency to the manager would break the bootstrap.
 - [What each tab does](#what-each-tab-does)
 - [The RTX 5090 gotcha](#the-rtx-5090-gotcha)
 - [What gets downloaded](#what-gets-downloaded)
+- [Civitai LoRAs and checkpoints](#civitai-loras-and-checkpoints)
 - [Bundled workflows](#bundled-workflows)
 - [Running it from another machine](#running-it-from-another-machine)
 - [Sharing one model library](#sharing-one-model-library)
@@ -132,6 +133,7 @@ ComfyUI** link in the header. Load a workflow from the sidebar and generate.
 | **Status** | Environment checklist — Python, git, GPU, checkout, venv, torch, torch-sees-GPU, disk. Refreshes every second. |
 | **Setup** | The four provisioning steps, with live streamed output. One at a time. |
 | **Models** | Every file in the manifest, grouped, with on-disk state, live download progress and per-file selection. |
+| **Civitai** | Add LoRAs, checkpoints and embeddings by URL. The saved list is committed to git. |
 | **Workflows** | Copies the bundled graphs into ComfyUI. |
 | **Launch** | Start/stop the ComfyUI process, tail its log, open it. |
 | **Settings** | Paths, PyTorch channel, bind address, port, parallel downloads, HF token, SHA-256 verification. |
@@ -200,6 +202,62 @@ Things that are easy to get wrong:
   4-6. Don't skip them; they're small.
 - **`clip_vision_h` is only needed by WAN 2.1 image-to-video.** WAN 2.2 doesn't
   use it, and text-to-video never does.
+
+---
+
+## Civitai LoRAs and checkpoints
+
+The **Civitai** tab adds anything from Civitai — LoRAs, checkpoints, embeddings,
+VAEs, ControlNets — on top of the fixed manifest.
+
+Paste a model URL and press **Look up**. It accepts any of these:
+
+```
+https://civitai.com/models/264290
+https://civitai.com/models/264290?modelVersionId=1558543
+https://civitai.com/api/download/models/1558543
+264290
+```
+
+You get the model name, creator, every version, and the files in each. Pick a
+version and a file, confirm the target folder, and **Add to list**.
+
+The target folder is guessed from the Civitai model type — `LORA` → `loras`,
+`Checkpoint` → `checkpoints`, `TextualInversion` → `embeddings`, and so on — and
+the dropdown lets you override it when the guess is wrong.
+
+### Why the list is committed
+
+`civitai.models.json` **is tracked in git**, unlike `config.json`. Add LoRAs on
+your desktop, `git push`, then `git pull` on the 5090 and hit **Download all
+missing** — the same set lands there, at the same paths, with the same version
+pinned. The file records the model and version id, the exact filename, the target
+folder, the size and the SHA-256, so it reproduces exactly rather than
+"whatever's newest".
+
+Only your API key stays machine-local.
+
+### API key
+
+Most public models download without one. You need a key for early-access or
+login-gated files — create it under **Civitai → Account settings → API Keys** and
+paste it into **Settings → Civitai API key**.
+
+Civitai redirects downloads to a signed CDN URL that carries its own
+authorization in the query string, so the manager passes your key as a query
+parameter rather than a header — an `Authorization` header surviving that
+redirect makes the CDN reject the request. If a download fails with HTTP 401 or
+403, the key is missing or expired.
+
+### Notes
+
+- Files are matched on disk by name and exact byte size, so a LoRA you already
+  have shows as **installed** and won't re-download.
+- The file list shows Civitai's own virus-scan result. Models are arbitrary
+  pickled or safetensors data from strangers — prefer `.safetensors`, which
+  can't execute code on load.
+- **Remove** only drops the entry from the list. It never deletes the file from
+  disk; do that yourself if you want the space back.
 
 ---
 
@@ -277,8 +335,9 @@ PyTorch.
 **A download failed**
 The file's row shows the reason. Re-select it and download again — it resumes
 from the `.part` file. `size mismatch` means the transfer was truncated;
-retrying fixes it. For `HTTP 401/403`, the repository is licence-gated and needs
-an HF token in Settings, though nothing in the default manifest is.
+retrying fixes it. For `HTTP 401/403`, the file needs authentication: an HF token
+for gated HuggingFace repos (nothing in the default manifest is), or a Civitai
+API key for early-access files.
 
 **Downloads are slow**
 Raise **Parallel downloads** in Settings (max 6). Past 2-3 you're usually
@@ -347,7 +406,11 @@ Everything the UI does goes through this, so it's all scriptable.
 | `GET` | `/api/state` | — returns config, checks, manifest state, jobs, logs |
 | `POST` | `/api/config` | `{"torch_channel":"cu128", ...}` |
 | `POST` | `/api/download` | `{"groups":["flux"]}` or `{"files":["ae.safetensors"]}` |
-| `POST` | `/api/download/cancel` | `{"all":true}` or `{"file":"..."}` |
+| `POST` | `/api/download/cancel` | `{"all":true}` or `{"key":"loras/thing.safetensors"}` |
+| `POST` | `/api/civitai/resolve` | `{"ref":"<url or id>"}` — metadata only, saves nothing |
+| `POST` | `/api/civitai/add` | `{"ref":..., "version_id":..., "file_id":..., "folder":"loras"}` |
+| `POST` | `/api/civitai/remove` | `{"key":"<versionId>:<fileId>"}` |
+| `POST` | `/api/civitai/download` | `{"all":true}` or `{"keys":["..."]}` |
 | `POST` | `/api/setup` | `{"step":"clone\|venv\|torch\|requirements"}` |
 | `POST` | `/api/workflows/install` | `{}` |
 | `POST` | `/api/comfy/start` · `/api/comfy/stop` | `{}` |
@@ -368,10 +431,12 @@ curl -X POST http://127.0.0.1:8500/api/download \
 ```
 manage.py               entry point (--doctor, --host, --port)
 deploy/core.py          config, manifest state, environment probing
+deploy/civitai.py       Civitai API client and the saved-model list
 deploy/jobs.py          resumable downloader + streamed subprocess tasks
 deploy/server.py        stdlib HTTP server and JSON API
 deploy/static/          the single-page UI (index.html, app.js, style.css)
 models.manifest.json    verified URLs, exact sizes, SHA-256
+civitai.models.json     your Civitai picks — committed, syncs across machines
 workflows/              graphs installed into ComfyUI
 scripts/bootstrap.ps1   preflight + launch for Windows
 config.json             local settings — gitignored, never committed

@@ -8,7 +8,7 @@ const selected = new Set();   // model filenames ticked for download
 const opened = new Set();     // expanded group ids
 let cfgDirty = false;         // don't clobber the settings form while typing
 
-const gb = b => (b / 1e9).toFixed(b < 1e9 ? 2 : 1) + " GB";
+const gb = b => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.max(1, Math.round(b / 1e6)) + " MB";
 const rate = b => b > 1e6 ? (b / 1e6).toFixed(1) + " MB/s" : Math.round(b / 1e3) + " KB/s";
 
 async function api(path, body) {
@@ -57,9 +57,14 @@ function renderChecks(doctor) {
     : "no GPU detected";
 }
 
-function renderGroups(manifest, dl) {
+function jobMap(dl) {
   const jobs = {};
-  (dl.jobs || []).forEach(j => jobs[j.file] = j);
+  (dl.jobs || []).forEach(j => jobs[j.key] = j);
+  return jobs;
+}
+
+function renderGroups(manifest, dl) {
+  const jobs = jobMap(dl);
 
   $("#groups").innerHTML = manifest.groups.map(g => {
     const complete = g.have === g.total;
@@ -67,7 +72,7 @@ function renderGroups(manifest, dl) {
     const groupTicked = g.models.every(m => m.state === "ok" || selected.has(m.file));
 
     const files = g.models.map(m => {
-      const job = jobs[m.file];
+      const job = jobs[`${m.folder}/${m.file}`];
       const busy = job && (job.status === "running" || job.status === "queued");
       let tag = `<span class="tag missing">missing</span>`;
       if (m.state === "ok") tag = `<span class="tag ok">installed</span>`;
@@ -199,6 +204,7 @@ function render() {
   if (!STATE) return;
   renderChecks(STATE.doctor);
   renderGroups(STATE.manifest, STATE.downloads);
+  renderSaved(STATE.civitai, STATE.downloads);
   renderTask(STATE.task);
   renderComfy(STATE.comfy);
   renderConfig(STATE.config);
@@ -206,6 +212,183 @@ function render() {
 
 const esc = s => String(s).replace(/[&<>"]/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* --------------------------------------------------------------- civitai */
+
+let CV = null;          // last resolved model
+let cvVersion = null;   // chosen version id
+let cvFile = null;      // chosen file id
+let cvFolder = null;    // chosen target folder
+
+function cvError(message) {
+  const box = $("#cv-error");
+  box.classList.toggle("hidden", !message);
+  box.textContent = message || "";
+}
+
+function renderResolved() {
+  const box = $("#cv-result");
+  if (!CV) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+
+  const version = CV.versions.find(v => v.version_id === cvVersion) || CV.versions[0];
+  cvVersion = version.version_id;
+  if (!version.files.some(f => f.file_id === cvFile)) {
+    cvFile = version.files.length ? version.files[0].file_id : null;
+  }
+
+  box.innerHTML = `
+    <div class="top">
+      <div style="flex:1">
+        <h4>${esc(CV.name)}</h4>
+        <div class="by">
+          ${CV.creator ? "by " + esc(CV.creator) + " · " : ""}
+          <a href="${esc(CV.page)}" target="_blank" rel="noopener">open on Civitai ↗</a>
+        </div>
+      </div>
+      <span class="kind">${esc(CV.type || "model")}</span>
+      ${CV.nsfw ? `<span class="kind nsfw">nsfw</span>` : ""}
+    </div>
+
+    <div class="picker">
+      <label>Version
+        <select id="cv-version">
+          ${CV.versions.map(v => `
+            <option value="${v.version_id}" ${v.version_id === cvVersion ? "selected" : ""}>
+              ${esc(v.version_name || v.version_id)}${v.base_model ? " — " + esc(v.base_model) : ""}
+            </option>`).join("")}
+        </select>
+      </label>
+      <label>Install into
+        <select id="cv-folder">
+          ${(STATE.civitai.folders || []).map(f => `
+            <option value="${f}" ${f === (cvFolder || CV.suggested_folder) ? "selected" : ""}>
+              models/${f}${f === CV.suggested_folder ? "  (suggested)" : ""}
+            </option>`).join("")}
+        </select>
+      </label>
+    </div>
+
+    <div class="cvfiles">
+      ${version.files.length ? version.files.map(f => `
+        <label class="cvfile">
+          <input type="radio" name="cvfile" value="${f.file_id}"
+                 ${f.file_id === cvFile ? "checked" : ""}>
+          <div>
+            <div class="nm">${esc(f.name)}</div>
+            <div class="sub2">${esc(f.kind)}${f.primary ? " · primary" : ""}
+              · scan: ${esc(f.scan)}</div>
+          </div>
+          <div class="sz">${gb(f.size)}</div>
+        </label>`).join("")
+        : `<div class="empty">This version has no downloadable files.</div>`}
+    </div>
+
+    <button id="cv-add" class="primary" ${cvFile ? "" : "disabled"}>Add to list</button>`;
+
+  $("#cv-version").onchange = ev => { cvVersion = Number(ev.target.value); cvFile = null; renderResolved(); };
+  $("#cv-folder").onchange = ev => { cvFolder = ev.target.value; };
+  $$("input[name=cvfile]").forEach(r => r.onchange = () => { cvFile = Number(r.value); });
+  const add = $("#cv-add");
+  if (add) add.onclick = addResolved;
+}
+
+function renderSaved(cv, dl) {
+  if (!cv) return;
+  const jobs = jobMap(dl);
+  const missing = cv.total - cv.have;
+
+  $("#cv-summary").textContent = cv.total
+    ? `${cv.have}/${cv.total} present${missing ? " · " + gb(cv.missing_bytes) + " to fetch" : ""}`
+    : "0 saved";
+  $("#cv-dl-all").disabled = missing === 0;
+
+  $("#cv-saved").innerHTML = cv.models.length ? cv.models.map(m => {
+    const job = jobs[`${m.folder}/${m.file}`];
+    let tag = `<span class="tag missing">missing</span>`;
+    if (m.state === "ok") tag = `<span class="tag ok">installed</span>`;
+    else if (m.state === "partial") tag = `<span class="tag partial">partial</span>`;
+    else if (m.state === "size-mismatch") tag = `<span class="tag bad">wrong size</span>`;
+    if (job) {
+      if (job.status === "running") tag = `<span class="tag partial">${job.percent}% · ${rate(job.speed)}</span>`;
+      else if (job.status === "queued") tag = `<span class="tag missing">queued</span>`;
+      else if (job.status === "error") tag = `<span class="tag bad">failed</span>`;
+    }
+    const busy = job && (job.status === "running" || job.status === "queued");
+    return `
+      <div class="cvrow">
+        <div>
+          <div class="nm">${esc(m.name)}
+            ${m.version_name ? `<span style="color:var(--muted);font-weight:400"> · ${esc(m.version_name)}</span>` : ""}
+          </div>
+          <div class="meta2">models/${esc(m.folder)}/${esc(m.file)}
+            ${m.base_model ? " · " + esc(m.base_model) : ""}
+            · <a href="${esc(m.page)}" target="_blank" rel="noopener">Civitai ↗</a></div>
+          ${job && job.error ? `<div class="meta2" style="color:var(--fail)">${esc(job.error)}</div>` : ""}
+          ${job && job.status === "running" ? `<div class="bar"><i style="width:${job.percent}%"></i></div>` : ""}
+        </div>
+        <div class="sz">${gb(m.size)}</div>
+        ${tag}
+        <div style="display:flex;gap:6px">
+          ${m.state === "ok" || busy ? "" :
+            `<button data-cvget="${esc(m.key)}">Download</button>`}
+          <button class="ghost" data-cvdel="${esc(m.key)}">Remove</button>
+        </div>
+      </div>`;
+  }).join("") : `<div class="empty">Nothing saved yet — paste a Civitai URL above.</div>`;
+
+  $$("[data-cvget]").forEach(b => b.onclick = async () => {
+    await api("/api/civitai/download", { keys: [b.dataset.cvget] });
+    poll();
+  });
+  $$("[data-cvdel]").forEach(b => b.onclick = async () => {
+    await api("/api/civitai/remove", { key: b.dataset.cvdel });
+    poll();
+  });
+}
+
+async function lookup() {
+  const ref = $("#cv-ref").value.trim();
+  if (!ref) return;
+  cvError("");
+  $("#cv-lookup").disabled = true;
+  $("#cv-lookup").textContent = "Looking up…";
+  try {
+    const res = await api("/api/civitai/resolve", { ref });
+    if (!res.ok) { CV = null; cvError(res.error); }
+    else {
+      CV = res.model;
+      cvVersion = CV.selected_version;
+      cvFile = null;
+      cvFolder = CV.suggested_folder;
+    }
+    renderResolved();
+  } catch (e) {
+    cvError("Lookup failed: " + e);
+  } finally {
+    $("#cv-lookup").disabled = false;
+    $("#cv-lookup").textContent = "Look up";
+  }
+}
+
+async function addResolved() {
+  const res = await api("/api/civitai/add", {
+    ref: String(CV.model_id),
+    version_id: cvVersion,
+    file_id: cvFile,
+    folder: cvFolder || CV.suggested_folder,
+  });
+  if (!res.ok) { cvError(res.error); return; }
+  CV = null;
+  $("#cv-ref").value = "";
+  cvError("");
+  renderResolved();
+  poll();
+}
+
+$("#cv-lookup").onclick = lookup;
+$("#cv-ref").onkeydown = ev => { if (ev.key === "Enter") lookup(); };
+$("#cv-dl-all").onclick = async () => { await api("/api/civitai/download", { all: true }); poll(); };
 
 /* ------------------------------------------------------------------ poll */
 

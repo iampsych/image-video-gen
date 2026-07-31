@@ -18,6 +18,7 @@ import subprocess
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -33,9 +34,11 @@ class Download:
         self.file = model["file"]
         self.folder = model["folder"]
         self.url = model["url"]
+        self.source = model.get("source", "hf")   # hf | civitai
         self.size = model["size"] or 0
         self.sha256 = model.get("sha256")
         self.dest = dest
+        self.key = f"{self.folder}/{self.file}"
         self.done = 0
         self.status = "queued"     # queued|running|done|error|cancelled
         self.error = ""
@@ -44,7 +47,8 @@ class Download:
 
     def as_dict(self) -> dict:
         return {
-            "file": self.file, "folder": self.folder, "size": self.size,
+            "key": self.key, "file": self.file, "folder": self.folder,
+            "source": self.source, "size": self.size,
             "done": self.done, "status": self.status, "error": self.error,
             "speed": round(self.speed, 1),
             "percent": round(100 * self.done / self.size, 1) if self.size else 0,
@@ -59,13 +63,13 @@ class Downloads:
         self.jobs: dict[str, Download] = {}
         self.queue: queue.Queue[Download] = queue.Queue()
         self.workers: list[threading.Thread] = []
-        self.token = ""
+        self.tokens = {"hf": "", "civitai": ""}
         self.verify_sha = False
 
     # -- control ----------------------------------------------------------
 
-    def configure(self, concurrency: int, token: str, verify_sha: bool):
-        self.token = token or ""
+    def configure(self, concurrency: int, hf_token: str, civitai_token: str, verify_sha: bool):
+        self.tokens = {"hf": hf_token or "", "civitai": civitai_token or ""}
         self.verify_sha = bool(verify_sha)
         want = max(1, min(int(concurrency or 2), 6))
         while len(self.workers) < want:
@@ -77,19 +81,18 @@ class Downloads:
         added = 0
         with self.lock:
             for model, dest in models:
-                key = model["file"]
-                existing = self.jobs.get(key)
+                job = Download(model, dest)
+                existing = self.jobs.get(job.key)
                 if existing and existing.status in ("queued", "running"):
                     continue
-                job = Download(model, dest)
-                self.jobs[key] = job
+                self.jobs[job.key] = job
                 self.queue.put(job)
                 added += 1
         return added
 
-    def cancel(self, file: str):
+    def cancel(self, key: str):
         with self.lock:
-            job = self.jobs.get(file)
+            job = self.jobs.get(key)
         if job:
             job.cancel.set()
             if job.status == "queued":
@@ -129,6 +132,26 @@ class Downloads:
             finally:
                 self.queue.task_done()
 
+    def _authorize(self, job: Download) -> tuple[str, dict]:
+        """Attach credentials the way each host expects.
+
+        Civitai 307s to a signed CDN URL that carries its own ``Authorization``
+        query parameter, and an ``Authorization`` *header* surviving that
+        redirect makes the CDN reject the request — so the token goes in the
+        query string instead. HuggingFace wants a bearer header.
+        """
+        headers = {"User-Agent": USER_AGENT}
+        token = self.tokens.get(job.source, "")
+        url = job.url
+        if not token:
+            return url, headers
+        if job.source == "civitai":
+            joiner = "&" if urllib.parse.urlparse(url).query else "?"
+            url = f"{url}{joiner}token={urllib.parse.quote(token)}"
+        else:
+            headers["Authorization"] = f"Bearer {token}"
+        return url, headers
+
     def _fetch(self, job: Download):
         job.status = "running"
         job.error = ""
@@ -146,22 +169,21 @@ class Downloads:
             part.unlink()
             offset = 0
 
-        headers = {"User-Agent": USER_AGENT}
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
+        url, headers = self._authorize(job)
         if offset:
             headers["Range"] = f"bytes={offset}-"
 
-        request = urllib.request.Request(job.url, headers=headers)
+        request = urllib.request.Request(url, headers=headers)
         try:
             response = urllib.request.urlopen(request, timeout=60)
         except urllib.error.HTTPError as exc:
             if exc.code == 416 and job.size and offset == job.size:
                 response = None                            # already complete
             elif exc.code in (401, 403):
+                where = "Civitai" if job.source == "civitai" else "HuggingFace"
                 job.status = "error"
-                job.error = (f"HTTP {exc.code} — this repository is licence-gated. "
-                             "Add a HuggingFace token in Settings.")
+                job.error = (f"HTTP {exc.code} — this download needs authentication. "
+                             f"Add a {where} API key in Settings.")
                 return
             else:
                 raise
