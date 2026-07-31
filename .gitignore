@@ -1,0 +1,18 @@
+# Local machine configuration — paths, ports, HF token
+config.json
+
+# Nothing large lives in this repo; models are downloaded by the manager
+*.safetensors
+*.ckpt
+*.pt
+*.part
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

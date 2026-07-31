@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ComfyUI Deploy Manager</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="dot" id="pulse"></span>
+    <h1>ComfyUI Deploy</h1>
+  </div>
+  <div class="head-right">
+    <span id="gpu-badge" class="badge">&mdash;</span>
+    <a id="comfy-link" class="badge link hidden" target="_blank" rel="noopener">open ComfyUI &#8599;</a>
+  </div>
+</header>
+
+<nav id="tabs">
+  <button data-tab="status" class="active">Status</button>
+  <button data-tab="setup">Setup</button>
+  <button data-tab="models">Models</button>
+  <button data-tab="workflows">Workflows</button>
+  <button data-tab="launch">Launch</button>
+  <button data-tab="settings">Settings</button>
+</nav>
+
+<main>
+
+  <!-- ---------------------------------------------------------------- status -->
+  <section id="tab-status" class="tab active">
+    <h2>Environment</h2>
+    <p class="hint">Every check the target machine needs to pass before generating anything.</p>
+    <div id="checks" class="checks"></div>
+    <div id="blocker" class="callout danger hidden"></div>
+  </section>
+
+  <!-- ----------------------------------------------------------------- setup -->
+  <section id="tab-setup" class="tab">
+    <h2>Setup</h2>
+    <p class="hint">Run these top to bottom on a fresh machine. Each streams its output below.</p>
+    <ol class="steps">
+      <li>
+        <div><strong>Clone ComfyUI</strong><span>Fetches ComfyUI, or fast-forwards it if already present.</span></div>
+        <button data-step="clone">Run</button>
+      </li>
+      <li>
+        <div><strong>Create virtual environment</strong><span>Makes <code>venv/</code> inside the ComfyUI folder.</span></div>
+        <button data-step="venv">Run</button>
+      </li>
+      <li>
+        <div><strong>Install PyTorch</strong><span>Channel <code id="chan">cu128</code> &mdash; RTX 50-series needs CUDA 12.8. Change it in Settings.</span></div>
+        <button data-step="torch">Run</button>
+      </li>
+      <li>
+        <div><strong>Install ComfyUI requirements</strong><span>Everything else from <code>requirements.txt</code>.</span></div>
+        <button data-step="requirements">Run</button>
+      </li>
+    </ol>
+    <div class="logwrap">
+      <div class="logbar"><span id="task-name">no task running</span><span id="task-status" class="pill">idle</span></div>
+      <pre id="task-log" class="log">Output appears here.</pre>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- models -->
+  <section id="tab-models" class="tab">
+    <h2>Models</h2>
+    <p class="hint">Sizes and SHA-256 come from the HuggingFace API. Downloads resume if interrupted.</p>
+
+    <div class="toolbar">
+      <button id="dl-selected" class="primary">Download selected</button>
+      <button id="sel-recommended">Select recommended</button>
+      <button id="sel-missing">Select all missing</button>
+      <button id="sel-none">Clear</button>
+      <span class="grow"></span>
+      <button id="dl-cancel" class="ghost">Cancel all</button>
+    </div>
+
+    <div id="dl-active" class="callout hidden"></div>
+    <div id="groups"></div>
+  </section>
+
+  <!-- ------------------------------------------------------------- workflows -->
+  <section id="tab-workflows" class="tab">
+    <h2>Workflows</h2>
+    <p class="hint">
+      Copies the bundled graphs into <code>ComfyUI/user/default/workflows/</code>, where they show up
+      in the sidebar. They reference exactly the filenames this manager downloads.
+    </p>
+    <button id="wf-install" class="primary">Install workflows</button>
+    <div id="wf-result" class="callout hidden"></div>
+    <ul id="wf-list" class="filelist"></ul>
+  </section>
+
+  <!-- ---------------------------------------------------------------- launch -->
+  <section id="tab-launch" class="tab">
+    <h2>Launch</h2>
+    <p class="hint">
+      Set the bind address to <code>0.0.0.0</code> in Settings to reach this box from another
+      machine on your LAN.
+    </p>
+    <div class="toolbar">
+      <button id="comfy-start" class="primary">Start ComfyUI</button>
+      <button id="comfy-stop" class="ghost">Stop</button>
+      <span id="comfy-state" class="pill">stopped</span>
+    </div>
+    <div class="logwrap">
+      <div class="logbar"><span>ComfyUI output</span></div>
+      <pre id="comfy-log" class="log">Not running.</pre>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------------- settings -->
+  <section id="tab-settings" class="tab">
+    <h2>Settings</h2>
+    <form id="cfg-form" class="form">
+      <label>ComfyUI directory
+        <input name="comfyui_dir" type="text" spellcheck="false">
+        <em>Where ComfyUI is cloned to.</em></label>
+      <label>Models directory
+        <input name="models_dir" type="text" spellcheck="false" placeholder="(blank = &lt;ComfyUI&gt;/models)">
+        <em>Point at a shared drive to reuse one model library across machines.</em></label>
+      <label>PyTorch channel
+        <select name="torch_channel">
+          <option value="cu128">cu128 &mdash; CUDA 12.8 (RTX 50-series / Blackwell)</option>
+          <option value="cu126">cu126 &mdash; CUDA 12.6 (RTX 40-series and older)</option>
+          <option value="cu124">cu124 &mdash; CUDA 12.4 (legacy)</option>
+          <option value="cpu">cpu &mdash; no GPU</option>
+        </select>
+        <em>cu128 is required for the RTX 5090; earlier builds have no sm_120 kernels.</em></label>
+      <div class="row">
+        <label>Bind address
+          <input name="listen" type="text" spellcheck="false">
+          <em>0.0.0.0 exposes it on the LAN.</em></label>
+        <label>Port
+          <input name="port" type="number" min="1" max="65535"></label>
+      </div>
+      <label>Extra ComfyUI arguments
+        <input name="extra_args" type="text" spellcheck="false" placeholder="--lowvram --preview-method auto">
+      </label>
+      <div class="row">
+        <label>Parallel downloads
+          <input name="concurrency" type="number" min="1" max="6"></label>
+        <label>HuggingFace token
+          <input name="hf_token" type="password" spellcheck="false" placeholder="only for gated repos">
+          <em>Not needed for anything in the default manifest.</em></label>
+      </div>
+      <label class="check">
+        <input name="verify_sha256" type="checkbox">
+        <span>Verify SHA-256 after each download <em>(thorough, but slow on 20&nbsp;GB files)</em></span>
+      </label>
+      <div class="toolbar">
+        <button type="submit" class="primary">Save</button>
+        <span id="cfg-saved" class="pill hidden">saved</span>
+      </div>
+    </form>
+  </section>
+
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
