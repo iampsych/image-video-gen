@@ -1,9 +1,9 @@
 <#
     Bootstrap for a fresh Windows machine.
 
-    Verifies Python, then starts the deploy manager. Everything else — cloning
+    Verifies Python, then starts the deploy manager. Everything else - cloning
     ComfyUI, building the venv, installing the right PyTorch, downloading models
-    — happens in the web UI.
+    - happens in the web UI.
 
         powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
 #>
@@ -19,7 +19,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 
 Write-Host ""
-Write-Host "  ComfyUI Deploy — bootstrap" -ForegroundColor Cyan
+Write-Host "  ComfyUI Deploy - bootstrap" -ForegroundColor Cyan
 Write-Host "  $repo"
 Write-Host ""
 
@@ -50,7 +50,7 @@ if (-not $python) {
 if (Get-Command git -ErrorAction SilentlyContinue) {
     Write-Host "  [ok]   git available" -ForegroundColor Green
 } else {
-    Write-Host "  [warn] git not found — the manager cannot clone ComfyUI without it." -ForegroundColor Yellow
+    Write-Host "  [warn] git not found - the manager cannot clone ComfyUI without it." -ForegroundColor Yellow
     Write-Host "         Install from https://git-scm.com/download/win"
 }
 
@@ -60,7 +60,7 @@ if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
     $gpu = (& nvidia-smi --query-gpu=name,memory.total --format=csv,noheader) | Select-Object -First 1
     Write-Host "  [ok]   GPU: $gpu" -ForegroundColor Green
 } else {
-    Write-Host "  [warn] nvidia-smi not found — no NVIDIA driver detected." -ForegroundColor Yellow
+    Write-Host "  [warn] nvidia-smi not found - no NVIDIA driver detected." -ForegroundColor Yellow
 }
 
 # --- firewall hint --------------------------------------------------------

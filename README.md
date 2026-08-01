@@ -44,6 +44,30 @@ powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
 
 The UI opens at <http://127.0.0.1:8500>.
 
+### Everyday start / stop
+
+Once set up, one command brings up both the manager and ComfyUI:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start.ps1
+```
+
+and to stop them:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\stop.ps1
+```
+
+`start.ps1` launches the manager, then asks it — through its own API — to start
+ComfyUI. That keeps the manager as the single owner of the ComfyUI process, so
+the Launch tab still shows the live log, the Stop button still works, and
+quitting the manager takes ComfyUI down with it. It waits for both to answer
+before printing their URLs, and re-running it is safe: anything already up is
+detected and left alone.
+
+Flags: `-BindHost 0.0.0.0` for LAN access, `-Port` for the manager port,
+`-ManagerOnly` to skip ComfyUI, `-NoBrowser` to open nothing.
+
 Cross-platform equivalent, or if you'd rather skip the PowerShell wrapper:
 
 ```bash
@@ -578,7 +602,9 @@ deploy/static/          the single-page UI (index.html, app.js, style.css)
 models.manifest.json    verified URLs, exact sizes, SHA-256
 civitai.models.json     your Civitai picks — committed, syncs across machines
 workflows/              graphs installed into ComfyUI
-scripts/bootstrap.ps1   preflight + launch for Windows
+scripts/bootstrap.ps1   first-run preflight + launch (Windows)
+scripts/start.ps1       everyday start: manager + ComfyUI
+scripts/stop.ps1        stop both
 config.json             local settings — gitignored, never committed
 ```
 
