@@ -302,6 +302,100 @@ class Downloads:
         job.status = "done"
 
 
+# --------------------------------------------------------------------------- integrity
+
+class Verifier:
+    """Hash installed files against the manifest.
+
+    A truncated download is caught by the size check, but a file that is the
+    right length with wrong bytes is not — and safetensors are memory-mapped, so
+    torch meets the bad bytes as a Windows page-fault (0xC0000006) that kills the
+    process instead of raising. Hashing is the only way to tell the difference
+    before ComfyUI tries to load the thing.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.results: dict[str, dict] = {}
+        self.running = False
+        self.current = ""
+        self.done_bytes = 0
+        self.total_bytes = 0
+        self.cancel = threading.Event()
+
+    def snapshot(self) -> dict:
+        with self.lock:
+            results = dict(self.results)
+        bad = [k for k, v in results.items() if v["state"] == "corrupt"]
+        return {
+            "running": self.running, "current": self.current,
+            "done_bytes": self.done_bytes, "total_bytes": self.total_bytes,
+            "percent": round(100 * self.done_bytes / self.total_bytes, 1) if self.total_bytes else 0,
+            "results": results, "corrupt": bad,
+            "checked": len(results),
+        }
+
+    def start(self, items: list[dict]) -> bool:
+        """items: [{key, path, size, sha256}]"""
+        if self.running:
+            return False
+        self.cancel.clear()
+        with self.lock:
+            self.results = {}
+        self.total_bytes = sum(i["size"] or 0 for i in items)
+        self.done_bytes = 0
+        self.running = True
+        threading.Thread(target=self._run, args=(items,), daemon=True).start()
+        return True
+
+    def stop(self):
+        self.cancel.set()
+
+    def _record(self, key, state, detail=""):
+        with self.lock:
+            self.results[key] = {"state": state, "detail": detail}
+
+    def _run(self, items):
+        try:
+            for item in items:
+                if self.cancel.is_set():
+                    break
+                key, path = item["key"], Path(item["path"])
+                self.current = key
+                if not path.exists():
+                    self._record(key, "missing")
+                    continue
+                actual_size = path.stat().st_size
+                if item["size"] and actual_size != item["size"]:
+                    self._record(key, "corrupt",
+                                 f"size {actual_size:,} != expected {item['size']:,}")
+                    self.done_bytes += item["size"] or 0
+                    continue
+                if not item.get("sha256"):
+                    self._record(key, "no-hash", "manifest has no sha256 for this file")
+                    self.done_bytes += actual_size
+                    continue
+                digest = hashlib.sha256()
+                try:
+                    with open(path, "rb") as handle:
+                        for block in iter(lambda: handle.read(CHUNK), b""):
+                            if self.cancel.is_set():
+                                return
+                            digest.update(block)
+                            self.done_bytes += len(block)
+                except OSError as exc:
+                    # a genuinely unreadable file fails here rather than in torch
+                    self._record(key, "corrupt", f"read error: {exc}")
+                    continue
+                if digest.hexdigest() == item["sha256"]:
+                    self._record(key, "ok")
+                else:
+                    self._record(key, "corrupt", "sha256 mismatch - re-download this file")
+        finally:
+            self.running = False
+            self.current = ""
+
+
 # --------------------------------------------------------------------------- processes
 
 class Task:

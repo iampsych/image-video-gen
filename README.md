@@ -504,6 +504,26 @@ including `partial` and `wrong size` rows), or tick the single row. Nothing
 already downloaded is fetched twice. On the Civitai tab the equivalent is
 **Download all missing**.
 
+**ComfyUI dies with `Windows fatal exception: page error` while loading a model**
+The model file is corrupt. safetensors files are memory-mapped, so torch does not
+read them up front — pages fault in as it touches them, and a page it cannot read
+kills the process (`EXCEPTION_IN_PAGE_ERROR`, 0xC0000006) instead of raising a
+Python error. The traceback points at `load_state_dict`, which looks like a torch
+bug but is not.
+
+Press **Verify installed** on the Models tab. It hashes every installed file
+against the manifest and lists anything that does not match, then offers to delete
+and re-download just those. The size check alone cannot catch this: a file can be
+exactly the right length with wrong bytes inside.
+
+Two other causes worth ruling out if the hashes are all fine: models on a network
+share or external drive that drops out mid-read produce the same error, as does a
+failing disk. Move the models to a local drive to rule that out.
+
+To prevent it recurring, turn on **Verify SHA-256 after each download** in
+Settings. It is off by default because hashing a 14 GB file takes a while, but on
+an unattended bulk download it is worth the time.
+
 **A download failed permanently**
 The row shows the reason. `HTTP 401/403` means it needs authentication — an HF
 token for gated HuggingFace repos (nothing in the default manifest is), or a
@@ -605,6 +625,9 @@ Everything the UI does goes through this, so it's all scriptable.
 | `POST` | `/api/config` | `{"torch_channel":"cu128", ...}` |
 | `POST` | `/api/download` | `{"groups":["flux"]}` or `{"files":["ae.safetensors"]}` |
 | `POST` | `/api/download/cancel` | `{"all":true}` or `{"key":"loras/thing.safetensors"}` |
+| `POST` | `/api/verify` | `{}` — hash every installed file against the manifest |
+| `POST` | `/api/verify/cancel` | `{}` |
+| `POST` | `/api/verify/redownload` | `{}` — delete the flagged files and re-fetch them |
 | `POST` | `/api/civitai/resolve` | `{"ref":"<url or id>"}` — metadata only, saves nothing |
 | `POST` | `/api/civitai/add` | `{"ref":..., "version_id":..., "file_id":..., "folder":"loras"}` |
 | `POST` | `/api/civitai/remove` | `{"key":"<versionId>:<fileId>"}` |

@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import civitai, core
-from .jobs import ComfyProcess, Downloads, Task
+from .jobs import ComfyProcess, Downloads, Task, Verifier
 
 STATIC = Path(__file__).resolve().parent / "static"
 MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
@@ -18,6 +18,24 @@ MIME = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=ut
 downloads = Downloads()
 task = Task()
 comfy = ComfyProcess()
+verifier = Verifier()
+
+
+def verify_targets(cfg: dict) -> list[dict]:
+    """Every installed file the manifest and Civitai list know a hash for."""
+    items = []
+    for group in core.manifest_state(cfg)["groups"]:
+        for model in group["models"]:
+            if model["state"] != "missing":
+                items.append({"key": f"{model['folder']}/{model['file']}",
+                              "path": str(core.target_path(cfg, model)),
+                              "size": model["size"], "sha256": model.get("sha256")})
+    for record in civitai.saved_state(cfg)["models"]:
+        if record["state"] != "missing":
+            items.append({"key": f"{record['folder']}/{record['file']}",
+                          "path": str(civitai.download_target(cfg, record)),
+                          "size": record["size"], "sha256": record.get("sha256")})
+    return items
 
 
 # --------------------------------------------------------------------------- actions
@@ -91,6 +109,7 @@ def state() -> dict:
         "manifest": core.manifest_state(cfg),
         "civitai": civitai.saved_state(cfg),
         "downloads": downloads.snapshot(),
+        "verify": verifier.snapshot(),
         "task": task.snapshot(),
         "comfy": comfy.snapshot(),
         "paths": {"models": str(core.models_dir(cfg)), "comfyui": str(core.comfy_dir(cfg))},
@@ -194,6 +213,36 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     downloads.cancel(body.get("key", ""))
                 self._json({"ok": True})
+
+            elif route == "/api/verify":
+                started = verifier.start(verify_targets(cfg))
+                self._json({"ok": started,
+                            "error": "" if started else "a verification is already running"})
+
+            elif route == "/api/verify/cancel":
+                verifier.stop()
+                self._json({"ok": True})
+
+            elif route == "/api/verify/redownload":
+                """Delete the files a verification flagged, then re-queue them."""
+                corrupt = set(verifier.snapshot()["corrupt"])
+                selected, removed = [], 0
+                for group in core.manifest_state(cfg)["groups"]:
+                    for model in group["models"]:
+                        if f"{model['folder']}/{model['file']}" in corrupt:
+                            path = core.target_path(cfg, model)
+                            path.unlink(missing_ok=True)
+                            removed += 1
+                            selected.append((model, path))
+                for record in civitai.saved_state(cfg)["models"]:
+                    if f"{record['folder']}/{record['file']}" in corrupt:
+                        path = civitai.download_target(cfg, record)
+                        path.unlink(missing_ok=True)
+                        removed += 1
+                        selected.append(({**record, "source": "civitai"}, path))
+                configure_downloads(cfg)
+                self._json({"ok": True, "deleted": removed,
+                            "queued": downloads.enqueue(selected)})
 
             elif route == "/api/civitai/resolve":
                 try:

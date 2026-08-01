@@ -217,6 +217,7 @@ function render() {
   if (!STATE) return;
   renderChecks(STATE.doctor);
   renderGroups(STATE.manifest, STATE.downloads);
+  renderVerify(STATE.verify);
   renderSaved(STATE.civitai, STATE.downloads);
   renderTask(STATE.task);
   renderComfy(STATE.comfy);
@@ -225,6 +226,57 @@ function render() {
 
 const esc = s => String(s).replace(/[&<>"]/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* ---------------------------------------------------------------- verify */
+
+function renderVerify(v) {
+  const box = $("#verify-box");
+  const btn = $("#verify-run");
+  if (!v) return;
+  btn.disabled = v.running;
+  btn.textContent = v.running ? "Verifying…" : "Verify installed";
+
+  if (!v.running && !v.checked) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+
+  if (v.running) {
+    box.classList.remove("danger", "good");
+    box.innerHTML = `<b>Hashing ${v.percent}% of ${gb(v.total_bytes)}</b>
+      <div style="color:var(--muted);font-family:var(--mono);font-size:12px">
+        ${esc(v.current || "")}</div>
+      <div class="bar"><i style="width:${v.percent}%"></i></div>
+      <div style="margin-top:8px"><button id="verify-stop" class="ghost">Cancel</button></div>`;
+    const s = $("#verify-stop");
+    if (s) s.onclick = () => api("/api/verify/cancel", {});
+    return;
+  }
+
+  const bad = v.corrupt || [];
+  const noHash = Object.entries(v.results).filter(([, r]) => r.state === "no-hash").length;
+  if (!bad.length) {
+    box.classList.remove("danger"); box.classList.add("good");
+    box.innerHTML = `<b>All ${v.checked} installed files verified</b>
+      Every file matches the SHA-256 in the manifest.
+      ${noHash ? `<br><span style="color:var(--muted)">${noHash} had no hash recorded and were size-checked only.</span>` : ""}`;
+    return;
+  }
+  box.classList.remove("good"); box.classList.add("danger");
+  box.innerHTML = `<b>${bad.length} corrupt file${bad.length > 1 ? "s" : ""} found</b>
+    These will crash ComfyUI on load — a safetensors file is memory-mapped, so bad
+    bytes surface as a Windows page error rather than a clean exception.
+    <div style="margin:9px 0;font-family:var(--mono);font-size:12px">
+      ${bad.map(k => `${esc(k)} — ${esc((v.results[k] || {}).detail || "")}`).join("<br>")}
+    </div>
+    <button id="verify-fix" class="primary">Delete and re-download ${bad.length} file${bad.length > 1 ? "s" : ""}</button>`;
+  const f = $("#verify-fix");
+  if (f) f.onclick = async () => { await api("/api/verify/redownload", {}); poll(); };
+}
+
+$("#verify-run").onclick = async () => {
+  const r = await api("/api/verify", {});
+  if (!r.ok && r.error) alert(r.error);
+  poll();
+};
 
 /* --------------------------------------------------------------- civitai */
 
