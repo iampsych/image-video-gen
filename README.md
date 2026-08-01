@@ -253,6 +253,7 @@ templates that ship with ComfyUI, so the graphs load without touching a dropdown
 | `wan22_i2v` | 31.0 GB | ✓ | WAN 2.2 image-to-video, 14B MoE + 4-step LoRAs |
 | `wan22_5b` | 11.4 GB | | WAN 2.2 TI2V 5B — faster and lighter, lower fidelity |
 | `video_post` | 0.2 GB | | Upscalers + RIFE/FILM interpolation for finished clips |
+| `face_detail` | 5 MB | | MediaPipe face landmarker for the ADetailer-style pass |
 
 **148.2 GB total; 136.6 GB for the recommended set.** Everything resolves without
 authentication — the HF token field exists only for licence-gated repositories.
@@ -394,6 +395,39 @@ A note on formats: RIFE and FILM here are `.safetensors`, but most ESRGAN
 upscalers are distributed as `.pth`, which is a pickle. The ones in the manifest
 are long-established community models, but treat unknown `.pth` files from
 elsewhere with the same caution as any executable.
+
+### Automatic face detail (the ADetailer equivalent)
+
+`sdxl_face_detail.json` generates an image, finds the face, and re-renders **only
+the face** at a lower denoise — what ADetailer does in A1111. It saves both
+images (`sdxl_base` and `sdxl_face`) so you can compare.
+
+It uses **core nodes only**. ComfyUI ships a pure-PyTorch port of MediaPipe's
+face landmarker, so there is no `mediapipe` pip dependency and no custom node to
+install — just the 5 MB `face_detail` group from the Models tab.
+
+The chain is `MediaPipeFaceLandmarker → MediaPipeFaceMask → GrowMask →
+FeatherMask → SetLatentNoiseMask → KSampler`.
+
+Dials that matter:
+
+- **denoise** on the face sampler is the main one. `0.35` polishes, `0.45` is a
+  good default, `0.5` rebuilds, and past `0.6` it starts changing who the person
+  is.
+- **Grow** pushes the mask out past the jaw; **Feather** softens the edge. A tight,
+  unfeathered mask leaves a visible seam along the jawline.
+- **num_faces** on the detector — raise it for group shots.
+
+Because the whole image is VAE round-tripped, pixels outside the mask shift very
+slightly. Measured on a test render, the masked region changed **7x more** than
+everything else; the rest is round-trip noise, not the sampler.
+
+**What this does not do:** true ADetailer crops the face, upscales the crop,
+inpaints at high resolution, then pastes it back — which recovers more detail on
+small or distant faces. Core ComfyUI can crop by bounding box (`CropByBBoxes`)
+but has no node to paste back at those coordinates, so that variant needs
+**Impact Pack**. At SDXL portrait resolutions the face is already large enough
+that the full-resolution pass here does most of the work.
 
 ### Turning any workflow into a one-panel control
 
@@ -602,6 +636,7 @@ deploy/static/          the single-page UI (index.html, app.js, style.css)
 models.manifest.json    verified URLs, exact sizes, SHA-256
 civitai.models.json     your Civitai picks — committed, syncs across machines
 workflows/              graphs installed into ComfyUI
+tools/                  scripts that generate the workflow JSON
 scripts/bootstrap.ps1   first-run preflight + launch (Windows)
 scripts/start.ps1       everyday start: manager + ComfyUI
 scripts/stop.ps1        stop both

@@ -298,6 +298,24 @@
           "note": "FILM interpolation. Slower than RIFE, often smoother on large motion."
         }
       ]
+    },
+    {
+      "id": "face_detail",
+      "name": "Face detail (ADetailer-style)",
+      "summary": "MediaPipe face landmarker. Tiny. Enables the automatic face-fix pass in sdxl_face_detail.json.",
+      "recommended": false,
+      "bytes": 5423900,
+      "models": [
+        {
+          "file": "mediapipe_face_fp32.safetensors",
+          "folder": "detection",
+          "url": "https://huggingface.co/Comfy-Org/mediapipe/resolve/main/detection/mediapipe_face_fp32.safetensors",
+          "repo": "Comfy-Org/mediapipe",
+          "size": 5423900,
+          "sha256": "a98c4806081d40eba35102a0f6dc0000c2e1388b72cf24e691703d0605bd888a",
+          "note": "Pure-PyTorch MediaPipe face landmarker. No mediapipe pip package needed."
+        }
+      ]
     }
   ]
 }
